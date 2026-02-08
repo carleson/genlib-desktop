@@ -1,0 +1,399 @@
+//! GEDCOM-parser för GEDCOM 5.5-filer
+
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::Path;
+
+use anyhow::{Context, Result};
+
+use super::models::{GedcomData, GedcomDate, GedcomFamily, GedcomIndividual};
+
+/// GEDCOM-parser
+pub struct GedcomParser;
+
+/// En rad i GEDCOM-filen
+#[derive(Debug)]
+struct GedcomLine {
+    level: u32,
+    tag: String,
+    value: Option<String>,
+    xref: Option<String>,
+}
+
+impl GedcomParser {
+    /// Parsa en GEDCOM-fil
+    pub fn parse_file(path: &Path) -> Result<GedcomData> {
+        let file = File::open(path).context("Kunde inte öppna GEDCOM-fil")?;
+        let reader = BufReader::new(file);
+        Self::parse_reader(reader)
+    }
+
+    /// Parsa GEDCOM från en sträng
+    pub fn parse_string(content: &str) -> Result<GedcomData> {
+        let reader = BufReader::new(content.as_bytes());
+        Self::parse_reader(reader)
+    }
+
+    fn parse_reader<R: BufRead>(reader: R) -> Result<GedcomData> {
+        let mut data = GedcomData::new();
+        let mut lines: Vec<GedcomLine> = Vec::new();
+
+        // Läs och parsa alla rader
+        for line_result in reader.lines() {
+            let line = line_result.context("Kunde inte läsa rad")?;
+            if let Some(parsed) = Self::parse_line(&line) {
+                lines.push(parsed);
+            }
+        }
+
+        // Processsa raderna
+        let mut i = 0;
+        while i < lines.len() {
+            let line = &lines[i];
+
+            if line.level == 0 {
+                match line.tag.as_str() {
+                    "HEAD" => {
+                        // Parsa header
+                        let (header_source, header_charset, consumed) =
+                            Self::parse_header(&lines[i..]);
+                        data.source = header_source;
+                        data.charset = header_charset;
+                        i += consumed;
+                        continue;
+                    }
+                    "INDI" => {
+                        // Parsa individ
+                        let (indi, consumed) = Self::parse_individual(&lines[i..]);
+                        data.individuals.push(indi);
+                        i += consumed;
+                        continue;
+                    }
+                    "FAM" => {
+                        // Parsa familj
+                        let (fam, consumed) = Self::parse_family(&lines[i..]);
+                        data.families.push(fam);
+                        i += consumed;
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
+            i += 1;
+        }
+
+        Ok(data)
+    }
+
+    fn parse_line(line: &str) -> Option<GedcomLine> {
+        let line = line.trim();
+        if line.is_empty() {
+            return None;
+        }
+
+        // Ta bort BOM om det finns
+        let line = line.trim_start_matches('\u{feff}');
+
+        let parts: Vec<&str> = line.splitn(3, ' ').collect();
+        if parts.is_empty() {
+            return None;
+        }
+
+        let level = parts[0].parse::<u32>().ok()?;
+
+        if parts.len() < 2 {
+            return None;
+        }
+
+        // Kolla om det är en xref (t.ex. @I1@)
+        let (xref, tag, value) = if parts[1].starts_with('@') && parts[1].ends_with('@') {
+            let xref = Some(parts[1].to_string());
+            let tag = parts.get(2).map(|s| s.to_string()).unwrap_or_default();
+            (xref, tag, None)
+        } else {
+            let tag = parts[1].to_string();
+            let value = if parts.len() > 2 {
+                Some(parts[2].to_string())
+            } else {
+                None
+            };
+            (None, tag, value)
+        };
+
+        Some(GedcomLine {
+            level,
+            tag,
+            value,
+            xref,
+        })
+    }
+
+    fn parse_header(lines: &[GedcomLine]) -> (Option<String>, Option<String>, usize) {
+        let mut source = None;
+        let mut charset = None;
+        let mut i = 1; // Hoppa över HEAD-raden
+
+        while i < lines.len() {
+            let line = &lines[i];
+
+            if line.level == 0 {
+                break;
+            }
+
+            match line.tag.as_str() {
+                "SOUR" => source = line.value.clone(),
+                "CHAR" => charset = line.value.clone(),
+                _ => {}
+            }
+
+            i += 1;
+        }
+
+        (source, charset, i)
+    }
+
+    fn parse_individual(lines: &[GedcomLine]) -> (GedcomIndividual, usize) {
+        let mut indi = GedcomIndividual::default();
+        let mut i = 0;
+
+        // Första raden har xref
+        if let Some(xref) = &lines[0].xref {
+            indi.id = xref.clone();
+        }
+
+        i += 1;
+
+        while i < lines.len() {
+            let line = &lines[i];
+
+            if line.level == 0 {
+                break;
+            }
+
+            match line.tag.as_str() {
+                "NAME" => {
+                    if let Some(ref name) = line.value {
+                        let (firstname, surname) = Self::parse_name(name);
+                        indi.firstname = firstname;
+                        indi.surname = surname;
+                    }
+                }
+                "SEX" => {
+                    indi.sex = line.value.clone();
+                }
+                "BIRT" => {
+                    // Parsa födelseinformation
+                    let (date, place, consumed) = Self::parse_event(&lines[i..]);
+                    indi.birth_date = date;
+                    indi.birth_place = place;
+                    i += consumed;
+                    continue;
+                }
+                "DEAT" => {
+                    // Parsa dödsinformation
+                    let (date, place, consumed) = Self::parse_event(&lines[i..]);
+                    indi.death_date = date;
+                    indi.death_place = place;
+                    i += consumed;
+                    continue;
+                }
+                "NOTE" => {
+                    if let Some(ref note) = line.value {
+                        indi.notes.push(note.clone());
+                    }
+                }
+                "FAMC" => {
+                    if let Some(ref fam_id) = line.value {
+                        indi.family_child.push(fam_id.clone());
+                    }
+                }
+                "FAMS" => {
+                    if let Some(ref fam_id) = line.value {
+                        indi.family_spouse.push(fam_id.clone());
+                    }
+                }
+                _ => {}
+            }
+
+            i += 1;
+        }
+
+        (indi, i)
+    }
+
+    fn parse_family(lines: &[GedcomLine]) -> (GedcomFamily, usize) {
+        let mut fam = GedcomFamily::default();
+        let mut i = 0;
+
+        // Första raden har xref
+        if let Some(xref) = &lines[0].xref {
+            fam.id = xref.clone();
+        }
+
+        i += 1;
+
+        while i < lines.len() {
+            let line = &lines[i];
+
+            if line.level == 0 {
+                break;
+            }
+
+            match line.tag.as_str() {
+                "HUSB" => {
+                    fam.husband_id = line.value.clone();
+                }
+                "WIFE" => {
+                    fam.wife_id = line.value.clone();
+                }
+                "CHIL" => {
+                    if let Some(ref child_id) = line.value {
+                        fam.children_ids.push(child_id.clone());
+                    }
+                }
+                "MARR" => {
+                    let (date, place, consumed) = Self::parse_event(&lines[i..]);
+                    fam.marriage_date = date;
+                    fam.marriage_place = place;
+                    i += consumed;
+                    continue;
+                }
+                _ => {}
+            }
+
+            i += 1;
+        }
+
+        (fam, i)
+    }
+
+    fn parse_event(lines: &[GedcomLine]) -> (Option<GedcomDate>, Option<String>, usize) {
+        let mut date = None;
+        let mut place = None;
+        let base_level = lines[0].level;
+        let mut i = 1;
+
+        while i < lines.len() {
+            let line = &lines[i];
+
+            if line.level <= base_level {
+                break;
+            }
+
+            match line.tag.as_str() {
+                "DATE" => {
+                    if let Some(ref date_str) = line.value {
+                        date = Some(GedcomDate::parse(date_str));
+                    }
+                }
+                "PLAC" => {
+                    place = line.value.clone();
+                }
+                _ => {}
+            }
+
+            i += 1;
+        }
+
+        (date, place, i)
+    }
+
+    fn parse_name(name: &str) -> (Option<String>, Option<String>) {
+        // GEDCOM-namn är i formatet "Förnamn /Efternamn/"
+        let name = name.trim();
+
+        if let Some(slash_pos) = name.find('/') {
+            let firstname = name[..slash_pos].trim();
+            let rest = &name[slash_pos + 1..];
+
+            let surname = if let Some(end_slash) = rest.find('/') {
+                rest[..end_slash].trim()
+            } else {
+                rest.trim()
+            };
+
+            let firstname = if firstname.is_empty() {
+                None
+            } else {
+                Some(firstname.to_string())
+            };
+
+            let surname = if surname.is_empty() {
+                None
+            } else {
+                Some(surname.to_string())
+            };
+
+            (firstname, surname)
+        } else {
+            // Inget efternamn markerat
+            if name.is_empty() {
+                (None, None)
+            } else {
+                (Some(name.to_string()), None)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_simple_gedcom() {
+        let gedcom = r#"0 HEAD
+1 SOUR Test
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Johan /Andersson/
+1 SEX M
+1 BIRT
+2 DATE 23 MAY 1850
+2 PLAC Stockholm
+1 DEAT
+2 DATE 1920
+0 @I2@ INDI
+1 NAME Anna /Svensson/
+1 SEX F
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 MARR
+2 DATE 1875
+0 TRLR"#;
+
+        let data = GedcomParser::parse_string(gedcom).unwrap();
+
+        assert_eq!(data.individual_count(), 2);
+        assert_eq!(data.family_count(), 1);
+        assert_eq!(data.source, Some("Test".to_string()));
+
+        let johan = data.find_individual("@I1@").unwrap();
+        assert_eq!(johan.firstname, Some("Johan".to_string()));
+        assert_eq!(johan.surname, Some("Andersson".to_string()));
+        assert_eq!(johan.sex, Some("M".to_string()));
+        assert!(johan.birth_date.is_some());
+        assert_eq!(johan.birth_place, Some("Stockholm".to_string()));
+
+        let fam = data.find_family("@F1@").unwrap();
+        assert_eq!(fam.husband_id, Some("@I1@".to_string()));
+        assert_eq!(fam.wife_id, Some("@I2@".to_string()));
+    }
+
+    #[test]
+    fn test_parse_name() {
+        let (first, last) = GedcomParser::parse_name("Johan /Andersson/");
+        assert_eq!(first, Some("Johan".to_string()));
+        assert_eq!(last, Some("Andersson".to_string()));
+
+        let (first, last) = GedcomParser::parse_name("/Andersson/");
+        assert_eq!(first, None);
+        assert_eq!(last, Some("Andersson".to_string()));
+
+        let (first, last) = GedcomParser::parse_name("Johan");
+        assert_eq!(first, Some("Johan".to_string()));
+        assert_eq!(last, None);
+    }
+}

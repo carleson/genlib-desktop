@@ -1,0 +1,23 @@
+pub mod backup_view;
+pub mod checklist_templates;
+pub mod dashboard;
+pub mod document_templates;
+pub mod document_viewer;
+pub mod family_tree;
+pub mod person_detail;
+pub mod person_list;
+pub mod reports;
+pub mod settings;
+pub mod setup_wizard;
+
+pub use backup_view::BackupView;
+pub use checklist_templates::ChecklistTemplatesView;
+pub use dashboard::DashboardView;
+pub use document_templates::DocumentTemplatesView;
+pub use document_viewer::DocumentViewerView;
+pub use family_tree::FamilyTreeView;
+pub use person_detail::PersonDetailView;
+pub use person_list::PersonListView;
+pub use reports::ReportsView;
+pub use settings::SettingsView;
+pub use setup_wizard::SetupWizardView;
