@@ -82,6 +82,17 @@ impl ConfirmDialog {
                 }
             }
             ConfirmAction::DeleteDocument(id) => {
+                // Ta bort fysisk fil innan DB-post
+                if let Ok(Some(doc)) = db.documents().find_by_id(*id) {
+                    if let Ok(Some(person)) = db.persons().find_by_id(doc.person_id) {
+                        if let Ok(config) = db.config().get() {
+                            let full_path = doc.full_path(&config.media_directory_path, &person.directory_name);
+                            if let Err(e) = crate::utils::file_ops::delete_file(&full_path) {
+                                eprintln!("Kunde inte ta bort fil {:?}: {}", full_path, e);
+                            }
+                        }
+                    }
+                }
                 match db.documents().delete(*id) {
                     Ok(_) => {
                         state.show_success("Dokument raderat");

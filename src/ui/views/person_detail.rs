@@ -1,14 +1,15 @@
 use egui::{self, ColorImage, RichText, TextureHandle, TextureOptions};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::db::Database;
-use crate::models::{Person, RelationshipType};
+use crate::models::{Document, Person, RelationshipType};
 use crate::ui::{
     state::{AppState, ConfirmAction},
     theme::{Colors, Icons},
     widgets::{ChecklistPanel, ImageGallery},
     View,
 };
+use crate::utils::file_ops;
 
 pub struct PersonDetailView {
     person_cache: Option<Person>,
@@ -122,7 +123,7 @@ impl PersonDetailView {
             ui.columns(2, |columns| {
                 // Vänster kolumn - personuppgifter
                 columns[0].vertical(|ui| {
-                    Self::show_person_info_static(ui, &person);
+                    Self::show_person_info_static(ui, &person, self.profile_texture.as_ref());
                 });
 
                 // Höger kolumn - relationer
@@ -161,6 +162,35 @@ impl PersonDetailView {
             .map(|c| c.media_directory_path.clone())
             .unwrap_or_default();
 
+        // Hämta person directory name för upload
+        let person_dir = self.person_cache.as_ref()
+            .map(|p| p.directory_name.clone())
+            .unwrap_or_default();
+
+        // Kolla drag-and-drop (måste göras före UI-rendering)
+        let dropped_files: Vec<PathBuf> = ui.ctx().input(|i| {
+            i.raw.dropped_files.iter()
+                .filter_map(|f| f.path.clone())
+                .filter(|p| file_ops::is_image_path(p))
+                .collect()
+        });
+
+        // Visa drop-overlay om filer hovrar — kontrollera path eller MIME
+        let is_hovering_files = ui.ctx().input(|i| {
+            !i.raw.hovered_files.is_empty() && i.raw.hovered_files.iter().any(|f| {
+                // Kolla path om tillgänglig
+                if let Some(ref p) = f.path {
+                    return file_ops::is_image_path(p);
+                }
+                // Kolla MIME-typ
+                if f.mime.starts_with("image/") {
+                    return true;
+                }
+                // Om varken path eller MIME finns, visa overlay ändå
+                true
+            })
+        });
+
         egui::Frame::none()
             .fill(ui.visuals().extreme_bg_color)
             .rounding(8.0)
@@ -173,13 +203,61 @@ impl PersonDetailView {
                     if count > 0 {
                         ui.label(RichText::new(format!("({})", count)).color(Colors::TEXT_MUTED));
                     }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // "+" knapp för att ladda upp bilder
+                        if ui.small_button(format!("{}", Icons::ADD))
+                            .on_hover_text("Ladda upp bilder")
+                            .clicked()
+                        {
+                            if let Some(paths) = rfd::FileDialog::new()
+                                .add_filter("Bilder", &["jpg", "jpeg", "png", "gif", "webp", "bmp"])
+                                .pick_files()
+                            {
+                                match import_images_to_person(&paths, db, person_id, &person_dir, &media_root) {
+                                    Ok(count) => {
+                                        state.show_success(&format!("{} bild(er) importerade", count));
+                                        self.image_gallery.mark_needs_refresh();
+                                        self.needs_refresh = true;
+                                    }
+                                    Err(e) => {
+                                        state.show_error(&format!("Import misslyckades: {}", e));
+                                    }
+                                }
+                            }
+                        }
+                    });
                 });
+
+                // Drag-and-drop overlay
+                if is_hovering_files {
+                    ui.add_space(8.0);
+                    egui::Frame::none()
+                        .fill(Colors::PRIMARY.linear_multiply(0.15))
+                        .rounding(8.0)
+                        .inner_margin(24.0)
+                        .stroke(egui::Stroke::new(2.0, Colors::PRIMARY))
+                        .show(ui, |ui| {
+                            ui.vertical_centered(|ui| {
+                                ui.label(
+                                    RichText::new(format!("{} Släpp bilder här", Icons::IMPORT))
+                                        .size(16.0)
+                                        .color(Colors::PRIMARY),
+                                );
+                            });
+                        });
+                }
+
                 ui.add_space(8.0);
 
-                // Visa galleriet och hantera profilbild-val
-                if let Some(profile_path) = self.image_gallery.show(ui, db, person_id, &media_root) {
-                    // Användaren valde att sätta en bild som profilbild
-                    match db.persons().set_profile_image(person_id, Some(&profile_path)) {
+                // Visa galleriet och hantera actions
+                let action = self.image_gallery.show(ui, db, person_id, &media_root);
+
+                // Hantera profilbild-val
+                if let Some(profile_path) = action.set_profile_image {
+                    // Bygg full relativ sökväg från media_root: persons/<dir>/<relative_path>
+                    let full_profile_path = format!("persons/{}/{}", person_dir, profile_path);
+                    match db.persons().set_profile_image(person_id, Some(&full_profile_path)) {
                         Ok(()) => {
                             state.show_success("Profilbild uppdaterad");
                             self.needs_refresh = true;
@@ -189,10 +267,37 @@ impl PersonDetailView {
                         }
                     }
                 }
+
+                // Hantera dubbelklick → öppna dokumentvisaren
+                if let Some(doc_id) = action.open_document {
+                    state.navigate_to_document(doc_id);
+                }
+
+                // Hantera radering
+                if let Some((doc_id, filename)) = action.delete_image {
+                    state.show_confirm(
+                        &format!("Vill du radera bilden \"{}\"? Filen tas bort permanent.", filename),
+                        ConfirmAction::DeleteDocument(doc_id),
+                    );
+                }
             });
+
+        // Hantera droppade filer
+        if !dropped_files.is_empty() {
+            match import_images_to_person(&dropped_files, db, person_id, &person_dir, &media_root) {
+                Ok(count) => {
+                    state.show_success(&format!("{} bild(er) importerade", count));
+                    self.image_gallery.mark_needs_refresh();
+                    self.needs_refresh = true;
+                }
+                Err(e) => {
+                    state.show_error(&format!("Import misslyckades: {}", e));
+                }
+            }
+        }
     }
 
-    fn show_person_info_static(ui: &mut egui::Ui, person: &Person) {
+    fn show_person_info_static(ui: &mut egui::Ui, person: &Person, profile_texture: Option<&TextureHandle>) {
         egui::Frame::none()
             .fill(ui.visuals().extreme_bg_color)
             .rounding(8.0)
@@ -202,45 +307,57 @@ impl PersonDetailView {
                 ui.heading("Personuppgifter");
                 ui.add_space(8.0);
 
-                egui::Grid::new("person_info_grid")
-                    .num_columns(2)
-                    .spacing([16.0, 8.0])
-                    .show(ui, |ui| {
-                        if let Some(ref firstname) = person.firstname {
-                            ui.label(RichText::new("Förnamn:").color(Colors::TEXT_SECONDARY));
-                            ui.label(firstname);
-                            ui.end_row();
-                        }
+                ui.horizontal(|ui| {
+                    // Vänster: info-grid
+                    ui.vertical(|ui| {
+                        egui::Grid::new("person_info_grid")
+                            .num_columns(2)
+                            .spacing([16.0, 8.0])
+                            .show(ui, |ui| {
+                                if let Some(ref firstname) = person.firstname {
+                                    ui.label(RichText::new("Förnamn:").color(Colors::TEXT_SECONDARY));
+                                    ui.label(firstname);
+                                    ui.end_row();
+                                }
 
-                        if let Some(ref surname) = person.surname {
-                            ui.label(RichText::new("Efternamn:").color(Colors::TEXT_SECONDARY));
-                            ui.label(surname);
-                            ui.end_row();
-                        }
+                                if let Some(ref surname) = person.surname {
+                                    ui.label(RichText::new("Efternamn:").color(Colors::TEXT_SECONDARY));
+                                    ui.label(surname);
+                                    ui.end_row();
+                                }
 
-                        if let Some(birth_date) = person.birth_date {
-                            ui.label(RichText::new("Födelsedatum:").color(Colors::TEXT_SECONDARY));
-                            ui.label(format!("{} {}", Icons::CALENDAR, birth_date.format("%Y-%m-%d")));
-                            ui.end_row();
-                        }
+                                if let Some(birth_date) = person.birth_date {
+                                    ui.label(RichText::new("Födelsedatum:").color(Colors::TEXT_SECONDARY));
+                                    ui.label(format!("{} {}", Icons::CALENDAR, birth_date.format("%Y-%m-%d")));
+                                    ui.end_row();
+                                }
 
-                        if let Some(death_date) = person.death_date {
-                            ui.label(RichText::new("Dödsdatum:").color(Colors::TEXT_SECONDARY));
-                            ui.label(format!("{} {}", Icons::CALENDAR, death_date.format("%Y-%m-%d")));
-                            ui.end_row();
-                        }
+                                if let Some(death_date) = person.death_date {
+                                    ui.label(RichText::new("Dödsdatum:").color(Colors::TEXT_SECONDARY));
+                                    ui.label(format!("{} {}", Icons::CALENDAR, death_date.format("%Y-%m-%d")));
+                                    ui.end_row();
+                                }
 
-                        if let Some(age) = person.age {
-                            ui.label(RichText::new("Ålder:").color(Colors::TEXT_SECONDARY));
-                            ui.label(format!("{} år", age));
-                            ui.end_row();
-                        }
+                                if let Some(age) = person.age {
+                                    ui.label(RichText::new("Ålder:").color(Colors::TEXT_SECONDARY));
+                                    ui.label(format!("{} år", age));
+                                    ui.end_row();
+                                }
 
-                        ui.label(RichText::new("Katalog:").color(Colors::TEXT_SECONDARY));
-                        ui.label(&person.directory_name);
-                        ui.end_row();
+                                ui.label(RichText::new("Katalog:").color(Colors::TEXT_SECONDARY));
+                                ui.label(&person.directory_name);
+                                ui.end_row();
+                            });
                     });
 
+                    // Höger: profilbild (thumbnail-storlek)
+                    if let Some(tex) = profile_texture {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                            let size = egui::vec2(80.0, 80.0);
+                            ui.add(egui::Image::new(tex).fit_to_exact_size(size).rounding(8.0));
+                        });
+                    }
+                });
             });
     }
 
@@ -462,5 +579,75 @@ impl PersonDetailView {
         self.image_gallery.mark_needs_refresh();
         self.profile_texture = None;
         self.profile_texture_path = None;
+    }
+}
+
+/// Importera bildfiler till en persons katalog och skapa DB-poster
+fn import_images_to_person(
+    paths: &[PathBuf],
+    db: &Database,
+    person_id: i64,
+    person_dir: &str,
+    media_root: &Path,
+) -> Result<usize, String> {
+    if paths.is_empty() {
+        return Ok(0);
+    }
+
+    // Hitta bildtyp (target_directory som börjar med "bilder/")
+    let image_type_id = db.documents().get_all_types()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|t| t.target_directory.starts_with("bilder"))
+        .and_then(|t| t.id);
+
+    // Bestäm målkatalog
+    let target_subdir = "bilder";
+    let dest_dir = media_root.join("persons").join(person_dir).join(target_subdir);
+
+    let mut imported = 0;
+
+    for path in paths {
+        let original_filename = path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("bild.jpg")
+            .to_string();
+
+        // Generera unikt filnamn
+        let filename = file_ops::unique_filename(&dest_dir, &original_filename);
+
+        // Kopiera fil
+        match file_ops::copy_file_to_directory(path, &dest_dir, &filename) {
+            Ok(dest_path) => {
+                // Skapa relativ sökväg (relativt personkatalogen)
+                let relative_path = format!("{}/{}", target_subdir, filename);
+
+                // Hämta filstorlek
+                let file_size = file_ops::get_file_size(&dest_path).unwrap_or(0) as i64;
+                let file_modified = file_ops::get_modified_time(&dest_path).ok();
+
+                // Skapa Document-post
+                let mut doc = Document::new(person_id, filename.clone(), relative_path);
+                doc.document_type_id = image_type_id;
+                doc.file_size = file_size;
+                doc.file_modified_at = file_modified;
+
+                match db.documents().create(&mut doc) {
+                    Ok(_) => imported += 1,
+                    Err(e) => {
+                        eprintln!("Kunde inte skapa dokument-post för {}: {}", filename, e);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Kunde inte kopiera {}: {}", original_filename, e);
+            }
+        }
+    }
+
+    if imported > 0 {
+        Ok(imported)
+    } else {
+        Err("Inga bilder kunde importeras".to_string())
     }
 }
