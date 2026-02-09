@@ -10,10 +10,23 @@ use crate::models::Document;
 use crate::ui::theme::{Colors, Icons};
 use crate::utils::exif::ExifData;
 
+/// Actions som galleriet returnerar till callern
+#[derive(Default)]
+pub struct GalleryAction {
+    /// Användaren vill sätta en bild som profilbild (relative_path)
+    pub set_profile_image: Option<String>,
+    /// Användaren vill radera en bild (document_id, filename)
+    pub delete_image: Option<(i64, String)>,
+    /// Användaren dubbelklickade på en bild — öppna dokumentvisaren (document_id)
+    pub open_document: Option<i64>,
+}
+
 /// Bildgalleri-widget
 pub struct ImageGallery {
-    /// Cachade texturer (document_id -> texture)
-    textures: HashMap<i64, TextureHandle>,
+    /// Cachade thumbnail-texturer (document_id -> texture)
+    thumbnails: HashMap<i64, TextureHandle>,
+    /// Cachade fullstora texturer för lightbox (document_id -> texture)
+    full_textures: HashMap<i64, TextureHandle>,
     /// Cachade EXIF-data (document_id -> exif data)
     exif_cache: HashMap<i64, Option<ExifData>>,
     /// Lista med bilder
@@ -30,6 +43,8 @@ pub struct ImageGallery {
     person_dir: Option<String>,
     /// Profilbild som valdes (returneras till caller)
     pending_profile_image: Option<String>,
+    /// Bild som ska raderas (returneras till caller)
+    pending_delete: Option<(i64, String)>,
 }
 
 impl Default for ImageGallery {
@@ -38,10 +53,14 @@ impl Default for ImageGallery {
     }
 }
 
+/// Max storlek för thumbnails (2x för retina-skärpa)
+const THUMBNAIL_MAX_SIZE: u32 = 160;
+
 impl ImageGallery {
     pub fn new() -> Self {
         Self {
-            textures: HashMap::new(),
+            thumbnails: HashMap::new(),
+            full_textures: HashMap::new(),
             exif_cache: HashMap::new(),
             images: Vec::new(),
             selected_image: None,
@@ -50,14 +69,18 @@ impl ImageGallery {
             person_id: None,
             person_dir: None,
             pending_profile_image: None,
+            pending_delete: None,
         }
     }
 
-    /// Visa galleriet
-    /// Returnerar Some(path) om användaren valde att sätta en bild som profilbild
-    pub fn show(&mut self, ui: &mut egui::Ui, db: &Database, person_id: i64, media_root: &Path) -> Option<String> {
-        // Kolla om vi har en pending profilbild att returnera
-        let result = self.pending_profile_image.take();
+    /// Visa galleriet och returnera actions
+    pub fn show(&mut self, ui: &mut egui::Ui, db: &Database, person_id: i64, media_root: &Path) -> GalleryAction {
+        // Samla pending actions
+        let mut action = GalleryAction {
+            set_profile_image: self.pending_profile_image.take(),
+            delete_image: self.pending_delete.take(),
+            open_document: None,
+        };
 
         // Refresh om nödvändigt
         if self.needs_refresh || self.person_id != Some(person_id) {
@@ -66,7 +89,7 @@ impl ImageGallery {
 
         if self.images.is_empty() {
             ui.label(RichText::new("Inga bilder").color(Colors::TEXT_MUTED));
-            return result;
+            return action;
         }
 
         // Grid med thumbnails
@@ -81,18 +104,14 @@ impl ImageGallery {
             (img.id.unwrap_or(0), img.relative_path.clone(), img.filename.clone())
         }).collect();
 
-        // Ladda texturer först
+        // Ladda thumbnails
         for (image_id, relative_path, _) in &image_data {
-            // Bygg full sökväg: media_root/persons/person_dir/relative_path
-            let image_path = if let Some(ref person_dir) = self.person_dir {
-                media_root.join("persons").join(person_dir).join(relative_path)
-            } else {
-                media_root.join(relative_path)
-            };
-            let _ = self.get_or_load_texture(ui.ctx(), *image_id, &image_path);
+            let image_path = self.build_image_path(media_root, relative_path);
+            let _ = self.get_or_load_thumbnail(ui.ctx(), *image_id, &image_path);
         }
 
         let mut clicked_image: Option<i64> = None;
+        let mut double_clicked_image: Option<i64> = None;
 
         egui::Grid::new("image_gallery_grid")
             .spacing([spacing, spacing])
@@ -102,13 +121,13 @@ impl ImageGallery {
                         ui.end_row();
                     }
 
-                    // Hämta textur (redan laddad)
-                    let texture = self.textures.get(image_id);
+                    // Hämta thumbnail (redan laddad)
+                    let texture = self.thumbnails.get(image_id);
 
-                    // Visa thumbnail
+                    // Visa thumbnail (sense = click för att fånga både enkel- och dubbelklick)
                     let response = if let Some(tex) = texture {
                         let size = egui::vec2(thumbnail_size, thumbnail_size);
-                        ui.add(egui::Image::new(tex).fit_to_exact_size(size))
+                        ui.add(egui::Image::new(tex).fit_to_exact_size(size).sense(egui::Sense::click()))
                     } else {
                         // Placeholder
                         let (rect, response) = ui.allocate_exact_size(
@@ -127,8 +146,12 @@ impl ImageGallery {
                         response
                     };
 
-                    // Klick för att visa fullstorlek
-                    if response.clicked() {
+                    // Dubbelklick → öppna dokumentvisare
+                    if response.double_clicked() {
+                        double_clicked_image = Some(*image_id);
+                    }
+                    // Enkelklick → lightbox
+                    else if response.clicked() {
                         clicked_image = Some(*image_id);
                     }
 
@@ -139,7 +162,9 @@ impl ImageGallery {
                 }
             });
 
-        if let Some(id) = clicked_image {
+        if let Some(id) = double_clicked_image {
+            action.open_document = Some(id);
+        } else if let Some(id) = clicked_image {
             self.selected_image = Some(id);
         }
 
@@ -148,7 +173,15 @@ impl ImageGallery {
             self.show_lightbox(ui.ctx(), selected_id, media_root);
         }
 
-        result
+        // Kolla om lightbox satte en action
+        if self.pending_profile_image.is_some() {
+            action.set_profile_image = self.pending_profile_image.take();
+        }
+        if self.pending_delete.is_some() {
+            action.delete_image = self.pending_delete.take();
+        }
+
+        action
     }
 
     /// Visa lightbox med fullstorleksbild
@@ -167,17 +200,13 @@ impl ImageGallery {
             }
         };
 
-        // Bygg full sökväg: media_root/persons/person_dir/relative_path
-        let image_path = if let Some(ref person_dir) = self.person_dir {
-            media_root.join("persons").join(person_dir).join(&relative_path)
-        } else {
-            media_root.join(&relative_path)
-        };
+        // Bygg full sökväg
+        let image_path = self.build_image_path(media_root, &relative_path);
         let total_images = self.images.len();
 
-        // Ladda textur
-        let _ = self.get_or_load_texture(ctx, image_id, &image_path);
-        let texture = self.textures.get(&image_id).cloned();
+        // Ladda fullstor textur för lightbox
+        let _ = self.get_or_load_full_texture(ctx, image_id, &image_path);
+        let texture = self.full_textures.get(&image_id).cloned();
 
         // Ladda EXIF-data om ej cachad
         self.load_exif_data(image_id, &image_path);
@@ -198,6 +227,7 @@ impl ImageGallery {
         let mut should_close = false;
         let mut new_selected: Option<i64> = None;
         let mut set_as_profile = false;
+        let mut delete_image = false;
 
         egui::Window::new("Bild")
             .collapsible(false)
@@ -227,9 +257,9 @@ impl ImageGallery {
                 if exif_data.is_some() {
                     ui.add_space(4.0);
                     let exif_header = if self.show_exif_info {
-                        format!("{} Bildinfo ▼", Icons::CAMERA)
+                        format!("{} Bildinfo \u{25bc}", Icons::CAMERA)
                     } else {
-                        format!("{} Bildinfo ▶", Icons::CAMERA)
+                        format!("{} Bildinfo \u{25b6}", Icons::CAMERA)
                     };
                     if ui.selectable_label(self.show_exif_info, exif_header).clicked() {
                         self.show_exif_info = !self.show_exif_info;
@@ -237,72 +267,14 @@ impl ImageGallery {
 
                     if self.show_exif_info {
                         if let Some(ref exif) = exif_data {
-                            egui::Frame::none()
-                                .fill(ui.visuals().faint_bg_color)
-                                .rounding(4.0)
-                                .inner_margin(8.0)
-                                .show(ui, |ui| {
-                                    egui::Grid::new("exif_grid")
-                                        .num_columns(2)
-                                        .spacing([16.0, 4.0])
-                                        .show(ui, |ui| {
-                                            // Datum
-                                            if let Some(dt) = exif.date_taken {
-                                                ui.label(RichText::new("Datum:").color(Colors::TEXT_SECONDARY));
-                                                ui.label(dt.format("%Y-%m-%d %H:%M").to_string());
-                                                ui.end_row();
-                                            }
-
-                                            // Kamera
-                                            if let Some(cam) = exif.camera_info() {
-                                                ui.label(RichText::new("Kamera:").color(Colors::TEXT_SECONDARY));
-                                                ui.label(cam);
-                                                ui.end_row();
-                                            }
-
-                                            // Exponering
-                                            if let Some(exp) = exif.exposure_info() {
-                                                ui.label(RichText::new("Exponering:").color(Colors::TEXT_SECONDARY));
-                                                ui.label(exp);
-                                                ui.end_row();
-                                            }
-
-                                            // Bildstorlek
-                                            if let Some(dim) = exif.dimensions_string() {
-                                                ui.label(RichText::new("Storlek:").color(Colors::TEXT_SECONDARY));
-                                                ui.label(format!("{} px", dim));
-                                                ui.end_row();
-                                            }
-
-                                            // GPS
-                                            if let Some(gps) = exif.gps_string() {
-                                                ui.label(RichText::new(format!("{} GPS:", Icons::LOCATION)).color(Colors::TEXT_SECONDARY));
-                                                ui.label(gps);
-                                                ui.end_row();
-                                            }
-
-                                            // Fotograf
-                                            if let Some(ref artist) = exif.artist {
-                                                ui.label(RichText::new("Fotograf:").color(Colors::TEXT_SECONDARY));
-                                                ui.label(artist);
-                                                ui.end_row();
-                                            }
-
-                                            // Copyright
-                                            if let Some(ref copyright) = exif.copyright {
-                                                ui.label(RichText::new("Copyright:").color(Colors::TEXT_SECONDARY));
-                                                ui.label(copyright);
-                                                ui.end_row();
-                                            }
-                                        });
-                                });
+                            Self::show_exif_panel(ui, exif);
                         }
                     }
                 }
 
                 ui.add_space(8.0);
 
-                // Navigation och profilbild-knapp
+                // Navigation, profilbild-knapp och radera
                 ui.horizontal(|ui| {
                     ui.add_enabled_ui(prev_id.is_some(), |ui| {
                         if ui.button(format!("{} Föregående", Icons::ARROW_LEFT)).clicked() {
@@ -324,6 +296,13 @@ impl ImageGallery {
                     if ui.button(format!("{} Sätt som profilbild", Icons::PERSON)).clicked() {
                         set_as_profile = true;
                     }
+
+                    ui.separator();
+
+                    // Radera-knapp
+                    if ui.button(RichText::new(format!("{} Radera", Icons::DELETE)).color(Colors::ERROR)).clicked() {
+                        delete_image = true;
+                    }
                 });
             });
 
@@ -335,9 +314,70 @@ impl ImageGallery {
 
         // Om användaren valde att sätta som profilbild
         if set_as_profile {
-            self.pending_profile_image = Some(relative_path);
-            self.selected_image = None; // Stäng lightbox
+            self.pending_profile_image = Some(relative_path.clone());
+            self.selected_image = None;
         }
+
+        // Om användaren vill radera
+        if delete_image {
+            self.pending_delete = Some((image_id, filename));
+            self.selected_image = None;
+        }
+    }
+
+    fn show_exif_panel(ui: &mut egui::Ui, exif: &ExifData) {
+        egui::Frame::none()
+            .fill(ui.visuals().faint_bg_color)
+            .rounding(4.0)
+            .inner_margin(8.0)
+            .show(ui, |ui| {
+                egui::Grid::new("exif_grid")
+                    .num_columns(2)
+                    .spacing([16.0, 4.0])
+                    .show(ui, |ui| {
+                        if let Some(dt) = exif.date_taken {
+                            ui.label(RichText::new("Datum:").color(Colors::TEXT_SECONDARY));
+                            ui.label(dt.format("%Y-%m-%d %H:%M").to_string());
+                            ui.end_row();
+                        }
+
+                        if let Some(cam) = exif.camera_info() {
+                            ui.label(RichText::new("Kamera:").color(Colors::TEXT_SECONDARY));
+                            ui.label(cam);
+                            ui.end_row();
+                        }
+
+                        if let Some(exp) = exif.exposure_info() {
+                            ui.label(RichText::new("Exponering:").color(Colors::TEXT_SECONDARY));
+                            ui.label(exp);
+                            ui.end_row();
+                        }
+
+                        if let Some(dim) = exif.dimensions_string() {
+                            ui.label(RichText::new("Storlek:").color(Colors::TEXT_SECONDARY));
+                            ui.label(format!("{} px", dim));
+                            ui.end_row();
+                        }
+
+                        if let Some(gps) = exif.gps_string() {
+                            ui.label(RichText::new(format!("{} GPS:", Icons::LOCATION)).color(Colors::TEXT_SECONDARY));
+                            ui.label(gps);
+                            ui.end_row();
+                        }
+
+                        if let Some(ref artist) = exif.artist {
+                            ui.label(RichText::new("Fotograf:").color(Colors::TEXT_SECONDARY));
+                            ui.label(artist);
+                            ui.end_row();
+                        }
+
+                        if let Some(ref copyright) = exif.copyright {
+                            ui.label(RichText::new("Copyright:").color(Colors::TEXT_SECONDARY));
+                            ui.label(copyright);
+                            ui.end_row();
+                        }
+                    });
+            });
     }
 
     /// Ladda EXIF-data för en bild
@@ -350,40 +390,85 @@ impl ImageGallery {
         self.exif_cache.insert(image_id, exif);
     }
 
-    fn get_or_load_texture(
+    /// Bygg full sökväg till en bild
+    fn build_image_path(&self, media_root: &Path, relative_path: &str) -> PathBuf {
+        if let Some(ref person_dir) = self.person_dir {
+            media_root.join("persons").join(person_dir).join(relative_path)
+        } else {
+            media_root.join(relative_path)
+        }
+    }
+
+    /// Hämta eller ladda thumbnail (nedskalad)
+    fn get_or_load_thumbnail(
         &mut self,
         ctx: &egui::Context,
         image_id: i64,
         path: &Path,
     ) -> Option<&TextureHandle> {
-        // Returnera cached om finns
-        if self.textures.contains_key(&image_id) {
-            return self.textures.get(&image_id);
+        if self.thumbnails.contains_key(&image_id) {
+            return self.thumbnails.get(&image_id);
         }
 
-        // Försök ladda bilden
-        if let Some(texture) = Self::load_image(ctx, path) {
-            self.textures.insert(image_id, texture);
-            return self.textures.get(&image_id);
+        if let Some(texture) = Self::load_thumbnail(ctx, path) {
+            self.thumbnails.insert(image_id, texture);
+            return self.thumbnails.get(&image_id);
         }
 
         None
     }
 
-    fn load_image(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
-        // Läs fil
-        let image_data = std::fs::read(path).ok()?;
+    /// Hämta eller ladda fullstor textur (för lightbox)
+    fn get_or_load_full_texture(
+        &mut self,
+        ctx: &egui::Context,
+        image_id: i64,
+        path: &Path,
+    ) -> Option<&TextureHandle> {
+        if self.full_textures.contains_key(&image_id) {
+            return self.full_textures.get(&image_id);
+        }
 
-        // Dekoda bild
+        if let Some(texture) = Self::load_image(ctx, path) {
+            self.full_textures.insert(image_id, texture);
+            return self.full_textures.get(&image_id);
+        }
+
+        None
+    }
+
+    /// Ladda nedskalad thumbnail
+    fn load_thumbnail(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
+        let image_data = std::fs::read(path).ok()?;
+        let image = image::load_from_memory(&image_data).ok()?;
+
+        // Skala ner till thumbnail-storlek
+        let thumb = image.thumbnail(THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE);
+        let rgba = thumb.to_rgba8();
+        let size = [rgba.width() as usize, rgba.height() as usize];
+        let pixels = rgba.into_raw();
+
+        let color_image = ColorImage::from_rgba_unmultiplied(size, &pixels);
+
+        let texture = ctx.load_texture(
+            format!("thumb_{}", path.display()),
+            color_image,
+            TextureOptions::LINEAR,
+        );
+
+        Some(texture)
+    }
+
+    /// Ladda fullstor bild
+    fn load_image(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
+        let image_data = std::fs::read(path).ok()?;
         let image = image::load_from_memory(&image_data).ok()?;
         let rgba = image.to_rgba8();
         let size = [rgba.width() as usize, rgba.height() as usize];
         let pixels = rgba.into_raw();
 
-        // Skapa färgbild
         let color_image = ColorImage::from_rgba_unmultiplied(size, &pixels);
 
-        // Skapa textur
         let texture = ctx.load_texture(
             format!("image_{}", path.display()),
             color_image,
@@ -417,15 +502,9 @@ impl ImageGallery {
 
     pub fn mark_needs_refresh(&mut self) {
         self.needs_refresh = true;
-        self.textures.clear();
+        self.thumbnails.clear();
+        self.full_textures.clear();
         self.exif_cache.clear();
         self.person_dir = None;
-    }
-
-    /// Sätt vald bild som profilbild
-    pub fn get_selected_image_path(&self) -> Option<String> {
-        self.selected_image
-            .and_then(|id| self.images.iter().find(|i| i.id == Some(id)))
-            .map(|i| i.relative_path.clone())
     }
 }
