@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Genlib
+GenericName=Genealogy Application
+Comment=Släktforskningsapplikation - hantera personer, relationer och dokument
+Exec=/home/johan/repos/projekt/genlib-desktop/target/debug/genlib-desktop
+Icon=genlib
+Terminal=false
+Type=Application
+Categories=Office;Database;
+Keywords=genealogy;family;tree;släktforskning;
+StartupWMClass=genlib

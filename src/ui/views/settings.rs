@@ -73,28 +73,28 @@ impl SettingsView {
                             ui.label(RichText::new("Lagringsplatser").strong());
                             ui.add_space(8.0);
 
-                            egui::Grid::new("storage_grid")
-                                .num_columns(3)
-                                .spacing([8.0, 8.0])
-                                .show(ui, |ui| {
-                                    ui.label("Media-katalog:");
-                                    ui.add(egui::TextEdit::singleline(&mut self.media_path).desired_width(300.0));
-                                    if ui.button("Välj...").clicked() {
-                                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                                            self.media_path = path.display().to_string();
-                                        }
+                            ui.label("Media-katalog:");
+                            ui.horizontal(|ui| {
+                                let w = ui.available_width() - 60.0;
+                                ui.add(egui::TextEdit::singleline(&mut self.media_path).desired_width(w));
+                                if ui.button("Välj...").clicked() {
+                                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                                        self.media_path = path.display().to_string();
                                     }
-                                    ui.end_row();
+                                }
+                            });
 
-                                    ui.label("Backup-katalog:");
-                                    ui.add(egui::TextEdit::singleline(&mut self.backup_path).desired_width(300.0));
-                                    if ui.button("Välj...").clicked() {
-                                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                                            self.backup_path = path.display().to_string();
-                                        }
+                            ui.add_space(4.0);
+                            ui.label("Backup-katalog:");
+                            ui.horizontal(|ui| {
+                                let w = ui.available_width() - 60.0;
+                                ui.add(egui::TextEdit::singleline(&mut self.backup_path).desired_width(w));
+                                if ui.button("Välj...").clicked() {
+                                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                                        self.backup_path = path.display().to_string();
                                     }
-                                    ui.end_row();
-                                });
+                                }
+                            });
 
                             ui.add_space(8.0);
 
@@ -174,16 +174,10 @@ impl SettingsView {
                             ui.label(RichText::new("Backup & Återställning").strong());
                             ui.add_space(8.0);
 
-                            ui.horizontal(|ui| {
-                                if ui.button(format!("{} Skapa backup", Icons::BACKUP)).clicked() {
-                                    // TODO: Implementera backup
-                                    state.show_status("Backup skapas...", crate::ui::StatusType::Info);
-                                }
-
-                                if ui.button(format!("{} Återställ", Icons::IMPORT)).clicked() {
-                                    // TODO: Implementera restore
-                                }
-                            });
+                            ui.label("Skapa och återställ säkerhetskopior av din databas.");
+                            if ui.button(format!("{} Öppna Backup & Återställning", Icons::BACKUP)).clicked() {
+                                state.navigate(View::Backup);
+                            }
                         });
 
                     ui.add_space(16.0);
@@ -201,7 +195,7 @@ impl SettingsView {
                             ui.label(format!("Version: {}", env!("CARGO_PKG_VERSION")));
                             ui.label("Ett dokumenthanteringssystem för släktforskning");
                             ui.add_space(4.0);
-                            ui.hyperlink_to("GitHub", "https://github.com/");
+                            ui.hyperlink_to("GitHub", "https://github.com/carleson/genlib-desktop");
                         });
                 });
             });

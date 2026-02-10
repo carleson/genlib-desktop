@@ -69,7 +69,7 @@ impl BackupView {
             self.needs_refresh = false;
         }
 
-        ui.vertical(|ui| {
+        egui::ScrollArea::vertical().show(ui, |ui| {
             // Header
             ui.horizontal(|ui| {
                 ui.heading(format!("{} Backup & Restore", Icons::FOLDER));

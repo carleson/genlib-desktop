@@ -4,6 +4,7 @@ use std::collections::HashSet;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum View {
     #[default]
+    Splash,
     Dashboard,
     PersonList,
     PersonDetail,

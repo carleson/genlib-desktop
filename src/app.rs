@@ -11,7 +11,7 @@ use crate::ui::{
     views::{
         BackupView, ChecklistSearchView, ChecklistTemplatesView, DashboardView, DocumentTemplatesView,
         DocumentViewerView, FamilyTreeView, PersonDetailView, PersonListView, ReportsView, SettingsView,
-        SetupWizardView,
+        SetupWizardView, SplashScreenView,
     },
     View,
 };
@@ -41,6 +41,9 @@ pub struct GenlibApp {
     document_upload_modal: DocumentUploadModal,
     relationship_form_modal: RelationshipFormModal,
     gedcom_import_modal: GedcomImportModal,
+
+    // Splash
+    splash_screen: SplashScreenView,
 
     // Intern
     style_initialized: bool,
@@ -79,10 +82,14 @@ impl GenlibApp {
             }
         }
 
+        let next_view = if setup_complete {
+            View::Dashboard
+        } else {
+            View::SetupWizard
+        };
+
         let mut state = AppState::new();
-        if !setup_complete {
-            state.current_view = View::SetupWizard;
-        }
+        state.current_view = View::Splash;
 
         Self {
             db,
@@ -99,6 +106,7 @@ impl GenlibApp {
             setup_wizard: SetupWizardView::new(),
             reports_view: ReportsView::new(),
             document_templates: DocumentTemplatesView::new(),
+            splash_screen: SplashScreenView::new(next_view),
             person_form_modal: PersonFormModal::new(),
             document_upload_modal: DocumentUploadModal::new(),
             relationship_form_modal: RelationshipFormModal::new(),
@@ -110,6 +118,7 @@ impl GenlibApp {
     /// Hantera navigation och uppdatera relevanta vyer
     fn handle_view_change(&mut self, new_view: View) {
         match new_view {
+            View::Splash => {}
             View::Dashboard => self.dashboard.mark_needs_refresh(),
             View::PersonList => self.person_list.mark_needs_refresh(),
             View::PersonDetail => self.person_detail.mark_needs_refresh(),
@@ -141,6 +150,18 @@ impl eframe::App for GenlibApp {
 
         // Rensa gamla statusmeddelanden
         self.state.clear_old_status();
+
+        // Splash — rendera utan topbar/statusbar
+        if self.state.current_view == View::Splash {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                if self.splash_screen.show(ctx, ui) {
+                    let next = self.splash_screen.next_view();
+                    self.state.current_view = next;
+                    self.handle_view_change(next);
+                }
+            });
+            return;
+        }
 
         // Topbar
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -251,6 +272,7 @@ impl eframe::App for GenlibApp {
                 View::DocumentTemplates => {
                     self.document_templates.show(ui, &mut self.state, &self.db);
                 }
+                View::Splash => {} // Hanteras ovan med early return
             }
         });
 

@@ -10,6 +10,7 @@ pub mod person_list;
 pub mod reports;
 pub mod settings;
 pub mod setup_wizard;
+pub mod splash_screen;
 
 pub use backup_view::BackupView;
 pub use checklist_search::ChecklistSearchView;
@@ -23,3 +24,4 @@ pub use person_list::PersonListView;
 pub use reports::ReportsView;
 pub use settings::SettingsView;
 pub use setup_wizard::SetupWizardView;
+pub use splash_screen::SplashScreenView;
