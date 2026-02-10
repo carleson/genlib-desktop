@@ -129,12 +129,54 @@ impl PersonDetailView {
 
         ui.add_space(16.0);
 
+        // Drag-and-drop: detektera globalt (oavsett flik)
+        let dropped_files: Vec<PathBuf> = ui.ctx().input(|i| {
+            i.raw.dropped_files.iter()
+                .filter_map(|f| f.path.clone())
+                .filter(|p| file_ops::is_image_path(p))
+                .collect()
+        });
+
+        let is_hovering_files = ui.ctx().input(|i| {
+            !i.raw.hovered_files.is_empty() && i.raw.hovered_files.iter().any(|f| {
+                if let Some(ref p) = f.path {
+                    return file_ops::is_image_path(p);
+                }
+                if f.mime.starts_with("image/") {
+                    return true;
+                }
+                true
+            })
+        });
+
+        // Byt till Bilder-fliken vid hover/drop
+        if is_hovering_files || !dropped_files.is_empty() {
+            self.selected_tab = PersonDetailTab::Images;
+        }
+
+        // Importera droppade filer
+        if !dropped_files.is_empty() {
+            let person_dir = self.person_cache.as_ref()
+                .map(|p| p.directory_name.clone())
+                .unwrap_or_default();
+            match import_images_to_person(&dropped_files, db, person_id, &person_dir, &media_root) {
+                Ok(count) => {
+                    state.show_success(&format!("{} bild(er) importerade", count));
+                    self.image_gallery.mark_needs_refresh();
+                    self.needs_refresh = true;
+                }
+                Err(e) => {
+                    state.show_error(&format!("Import misslyckades: {}", e));
+                }
+            }
+        }
+
         // Flikrad
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.selected_tab, PersonDetailTab::PersonInfo, format!("{} Personuppgifter", Icons::PERSON));
             ui.selectable_value(&mut self.selected_tab, PersonDetailTab::Documents, format!("{} Dokument", Icons::DOCUMENT));
             ui.selectable_value(&mut self.selected_tab, PersonDetailTab::Images, format!("{} Bilder", Icons::IMAGE));
-            ui.selectable_value(&mut self.selected_tab, PersonDetailTab::Checklist, format!("{} Checklista", Icons::CHECK));
+            ui.selectable_value(&mut self.selected_tab, PersonDetailTab::Checklist, format!("{} Uppgifter", Icons::CHECK));
         });
 
         ui.separator();
@@ -178,26 +220,15 @@ impl PersonDetailView {
             .map(|p| p.directory_name.clone())
             .unwrap_or_default();
 
-        // Kolla drag-and-drop (måste göras före UI-rendering)
-        let dropped_files: Vec<PathBuf> = ui.ctx().input(|i| {
-            i.raw.dropped_files.iter()
-                .filter_map(|f| f.path.clone())
-                .filter(|p| file_ops::is_image_path(p))
-                .collect()
-        });
-
-        // Visa drop-overlay om filer hovrar — kontrollera path eller MIME
+        // Visa drop-overlay om filer hovrar
         let is_hovering_files = ui.ctx().input(|i| {
             !i.raw.hovered_files.is_empty() && i.raw.hovered_files.iter().any(|f| {
-                // Kolla path om tillgänglig
                 if let Some(ref p) = f.path {
                     return file_ops::is_image_path(p);
                 }
-                // Kolla MIME-typ
                 if f.mime.starts_with("image/") {
                     return true;
                 }
-                // Om varken path eller MIME finns, visa overlay ändå
                 true
             })
         });
@@ -266,7 +297,6 @@ impl PersonDetailView {
 
                 // Hantera profilbild-val
                 if let Some(profile_path) = action.set_profile_image {
-                    // Bygg full relativ sökväg från media_root: persons/<dir>/<relative_path>
                     let full_profile_path = format!("persons/{}/{}", person_dir, profile_path);
                     match db.persons().set_profile_image(person_id, Some(&full_profile_path)) {
                         Ok(()) => {
@@ -292,20 +322,6 @@ impl PersonDetailView {
                     );
                 }
             });
-
-        // Hantera droppade filer
-        if !dropped_files.is_empty() {
-            match import_images_to_person(&dropped_files, db, person_id, &person_dir, &media_root) {
-                Ok(count) => {
-                    state.show_success(&format!("{} bild(er) importerade", count));
-                    self.image_gallery.mark_needs_refresh();
-                    self.needs_refresh = true;
-                }
-                Err(e) => {
-                    state.show_error(&format!("Import misslyckades: {}", e));
-                }
-            }
-        }
     }
 
     fn show_person_info_static(ui: &mut egui::Ui, person: &Person, profile_texture: Option<&TextureHandle>) {

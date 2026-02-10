@@ -13,6 +13,7 @@ pub enum View {
     Backup,
     SetupWizard,
     ChecklistTemplates,
+    ChecklistSearch,
     Reports,
     DocumentTemplates,
 }

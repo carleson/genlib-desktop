@@ -11,6 +11,24 @@ use crate::models::{
     PersonChecklistItem,
 };
 
+/// Filter för global checklistsökning
+#[derive(Debug, Clone, Default)]
+pub struct ChecklistSearchFilter {
+    pub query: String,
+    pub birth_after: Option<chrono::NaiveDate>,
+    pub birth_before: Option<chrono::NaiveDate>,
+    pub death_after: Option<chrono::NaiveDate>,
+    pub death_before: Option<chrono::NaiveDate>,
+    pub filter_alive: Option<bool>,
+}
+
+/// Resultat från global checklistsökning (item + personnamn)
+#[derive(Debug, Clone)]
+pub struct ChecklistSearchResult {
+    pub item: PersonChecklistItem,
+    pub person_name: String,
+}
+
 /// Repository för checklistobjekt
 pub struct ChecklistRepository {
     conn: Arc<Mutex<Connection>>,
@@ -408,6 +426,22 @@ impl ChecklistRepository {
         Ok(item)
     }
 
+    /// Hämta global progress (completed, total) för alla personer
+    pub fn get_global_progress(&self) -> Result<(i64, i64)> {
+        let conn = self.conn.lock().unwrap();
+        let total: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM person_checklist_items",
+            [],
+            |row| row.get(0),
+        )?;
+        let completed: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM person_checklist_items WHERE is_completed = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok((completed, total))
+    }
+
     /// Räkna checklistobjekt för en person
     pub fn count_by_person(&self, person_id: i64) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
@@ -417,6 +451,63 @@ impl ChecklistRepository {
             |row| row.get(0),
         )?;
         Ok(count)
+    }
+
+    /// Sök checklistobjekt globalt med personnamn- och datumfilter
+    pub fn search_items_with_person(&self, filter: &ChecklistSearchFilter) -> Result<Vec<ChecklistSearchResult>> {
+        let conn = self.conn.lock().unwrap();
+        let like_pattern = format!("%{}%", filter.query);
+
+        let mut sql = String::from(
+            "SELECT pci.id, pci.person_id, pci.template_item_id, pci.title, pci.description,
+                    pci.category, pci.priority, pci.sort_order, pci.is_completed, pci.completed_at, pci.notes,
+                    p.firstname, p.surname
+             FROM person_checklist_items pci
+             JOIN persons p ON p.id = pci.person_id
+             WHERE (?1 = '' OR p.firstname LIKE ?2 OR p.surname LIKE ?2)",
+        );
+
+        if let Some(ref d) = filter.birth_after {
+            sql.push_str(&format!(" AND p.birth_date >= '{}'", d.format("%Y-%m-%d")));
+        }
+        if let Some(ref d) = filter.birth_before {
+            sql.push_str(&format!(" AND p.birth_date <= '{}'", d.format("%Y-%m-%d")));
+        }
+        if let Some(ref d) = filter.death_after {
+            sql.push_str(&format!(" AND p.death_date >= '{}'", d.format("%Y-%m-%d")));
+        }
+        if let Some(ref d) = filter.death_before {
+            sql.push_str(&format!(" AND p.death_date <= '{}'", d.format("%Y-%m-%d")));
+        }
+        if let Some(alive) = filter.filter_alive {
+            if alive {
+                sql.push_str(" AND p.death_date IS NULL");
+            } else {
+                sql.push_str(" AND p.death_date IS NOT NULL");
+            }
+        }
+
+        sql.push_str(" ORDER BY pci.is_completed, p.surname, p.firstname, pci.priority DESC");
+
+        let mut stmt = conn.prepare(&sql)?;
+
+        let results = stmt
+            .query_map(params![filter.query, like_pattern], |row| {
+                let item = Self::row_to_item(row);
+                let firstname: String = row.get(11).unwrap_or_default();
+                let surname: String = row.get(12).unwrap_or_default();
+                let person_name = match (firstname.is_empty(), surname.is_empty()) {
+                    (false, false) => format!("{} {}", firstname, surname),
+                    (false, true) => firstname,
+                    (true, false) => surname,
+                    (true, true) => "Okänd".to_string(),
+                };
+                Ok(ChecklistSearchResult { item, person_name })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(results)
     }
 
     fn row_to_item(row: &Row) -> PersonChecklistItem {

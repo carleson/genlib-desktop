@@ -66,7 +66,7 @@ impl ChecklistPanel {
                 ui.set_min_width(ui.available_width());
                 // Header med progress
                 ui.horizontal(|ui| {
-                    ui.heading(format!("{} Checklista", Icons::CHECK));
+                    ui.heading(format!("{} Uppgifter", Icons::CHECK));
 
                     let (completed, total) = self.progress;
                     if total > 0 {
