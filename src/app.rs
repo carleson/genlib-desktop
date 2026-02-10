@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::db::Database;
 use crate::ui::{
-    modals::{ConfirmDialog, DocumentUploadModal, GedcomImportModal, PersonFormModal, RelationshipFormModal},
+    modals::{ArchiveModal, ConfirmDialog, DocumentUploadModal, GedcomImportModal, PersonFormModal, RelationshipFormModal},
     state::AppState,
     theme::configure_style,
     views::{
@@ -41,6 +41,7 @@ pub struct GenlibApp {
     document_upload_modal: DocumentUploadModal,
     relationship_form_modal: RelationshipFormModal,
     gedcom_import_modal: GedcomImportModal,
+    archive_modal: ArchiveModal,
 
     // Splash
     splash_screen: SplashScreenView,
@@ -111,6 +112,7 @@ impl GenlibApp {
             document_upload_modal: DocumentUploadModal::new(),
             relationship_form_modal: RelationshipFormModal::new(),
             gedcom_import_modal: GedcomImportModal::new(),
+            archive_modal: ArchiveModal::new(),
             style_initialized: false,
         }
     }
@@ -341,6 +343,14 @@ impl eframe::App for GenlibApp {
             if self.gedcom_import_modal.show(ctx, &mut self.state, &self.db) {
                 self.state.show_gedcom_import = false;
                 // Uppdatera alla vyer efter import
+                self.dashboard.mark_needs_refresh();
+                self.person_list.mark_needs_refresh();
+            }
+        }
+
+        // Arkivera projekt modal
+        if self.state.show_archive_modal {
+            if self.archive_modal.show(ctx, &mut self.state, &self.db) {
                 self.dashboard.mark_needs_refresh();
                 self.person_list.mark_needs_refresh();
             }

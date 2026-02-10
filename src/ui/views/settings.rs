@@ -182,6 +182,25 @@ impl SettingsView {
 
                     ui.add_space(16.0);
 
+                    // Arkivera projekt
+                    egui::Frame::none()
+                        .fill(ui.visuals().extreme_bg_color)
+                        .rounding(8.0)
+                        .inner_margin(16.0)
+                        .show(ui, |ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.label(RichText::new("Arkivera projekt").strong());
+                            ui.add_space(8.0);
+
+                            ui.label("Arkivera alla data till en ZIP-fil och börja om med ett nytt projekt.");
+                            ui.add_space(4.0);
+                            if ui.button(format!("{} Arkivera projekt", Icons::FOLDER)).clicked() {
+                                state.show_archive_modal = true;
+                            }
+                        });
+
+                    ui.add_space(16.0);
+
                     // Om applikationen
                     egui::Frame::none()
                         .fill(ui.visuals().extreme_bg_color)

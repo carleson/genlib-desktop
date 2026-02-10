@@ -83,19 +83,24 @@ impl<'a> BackupService<'a> {
 
     /// Skapa en backup
     pub fn create_backup(&self) -> Result<BackupResult> {
-        // Hämta backup-katalog från config
+        self.create_zip("genlib_backup")
+    }
+
+    /// Skapa ett arkiv (samma som backup men med annat prefix)
+    pub fn create_archive(&self) -> Result<BackupResult> {
+        self.create_zip("genlib_archive")
+    }
+
+    fn create_zip(&self, prefix: &str) -> Result<BackupResult> {
         let config = self.db.config().get()?;
         let backup_dir = &config.backup_directory_path;
 
-        // Skapa backup-katalogen om den inte finns
         fs::create_dir_all(backup_dir).context("Kunde inte skapa backup-katalog")?;
 
-        // Generera filnamn med timestamp
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        let filename = format!("genlib_backup_{}.zip", timestamp);
+        let filename = format!("{}_{}.zip", prefix, timestamp);
         let backup_path = backup_dir.join(&filename);
 
-        // Skapa ZIP-fil
         let file = File::create(&backup_path).context("Kunde inte skapa backup-fil")?;
         let mut zip = ZipWriter::new(file);
 
@@ -105,23 +110,19 @@ impl<'a> BackupService<'a> {
 
         let mut file_count = 0;
 
-        // Lägg till databasen
         let db_path = get_database_path();
         if db_path.exists() {
             self.add_file_to_zip(&mut zip, &db_path, "genlib.db", options)?;
             file_count += 1;
         }
 
-        // Lägg till media-katalog om den finns
         let media_dir = &config.media_directory_path;
         if media_dir.exists() {
             file_count += self.add_directory_to_zip(&mut zip, media_dir, "media", options)?;
         }
 
-        // Avsluta ZIP
         zip.finish().context("Kunde inte avsluta ZIP-fil")?;
 
-        // Hämta filstorlek
         let metadata = fs::metadata(&backup_path)?;
 
         Ok(BackupResult {

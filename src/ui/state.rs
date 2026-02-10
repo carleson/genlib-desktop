@@ -52,6 +52,9 @@ pub struct AppState {
     /// Visar GEDCOM-importmodal
     pub show_gedcom_import: bool,
 
+    /// Visar arkiveringsmodal
+    pub show_archive_modal: bool,
+
     /// Visar bekräftelsedialog
     pub show_confirm_dialog: bool,
     pub confirm_dialog_message: String,
