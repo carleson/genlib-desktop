@@ -96,9 +96,12 @@ impl PersonFormModal {
                                 self.auto_generate_dir = false;
                             }
                             if ui.small_button("🔄").on_hover_text("Auto-generera från namn").clicked() {
+                                let fmt = db.config().get().map(|c| c.dir_name_format).unwrap_or_default();
                                 self.form_data.directory_name = Person::generate_directory_name(
                                     &Some(self.form_data.firstname.clone()).filter(|s| !s.is_empty()),
                                     &Some(self.form_data.surname.clone()).filter(|s| !s.is_empty()),
+                                    &Some(self.form_data.birth_date.clone()).filter(|s| !s.is_empty()),
+                                    fmt,
                                 );
                                 self.auto_generate_dir = true;
                             }
@@ -109,9 +112,12 @@ impl PersonFormModal {
 
                 // Auto-generera katalognamn om aktiverat och namn ändrats
                 if name_changed && self.auto_generate_dir && state.editing_person_id.is_none() {
+                    let fmt = db.config().get().map(|c| c.dir_name_format).unwrap_or_default();
                     self.form_data.directory_name = Person::generate_directory_name(
                         &Some(self.form_data.firstname.clone()).filter(|s| !s.is_empty()),
                         &Some(self.form_data.surname.clone()).filter(|s| !s.is_empty()),
+                        &Some(self.form_data.birth_date.clone()).filter(|s| !s.is_empty()),
+                        fmt,
                     );
                 }
 

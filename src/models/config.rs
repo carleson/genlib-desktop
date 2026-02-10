@@ -1,5 +1,58 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::PathBuf;
+
+/// Format för personkatalogsnamn
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum DirNameFormat {
+    /// förnamn_efternamn_födelsedatum
+    #[default]
+    FirstnameFirst,
+    /// efternamn_förnamn_födelsedatum
+    SurnameFirst,
+    /// födelsedatum_förnamn_efternamn
+    DateFirst,
+}
+
+impl DirNameFormat {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::FirstnameFirst => "Förnamn först",
+            Self::SurnameFirst => "Efternamn först",
+            Self::DateFirst => "Datum först",
+        }
+    }
+
+    pub fn example(&self) -> &'static str {
+        match self {
+            Self::FirstnameFirst => "gosta_anders_svensson_1921-12-07",
+            Self::SurnameFirst => "svensson_gosta_anders_1921-12-07",
+            Self::DateFirst => "1921-12-07_gosta_anders_svensson",
+        }
+    }
+
+    pub fn all() -> &'static [DirNameFormat] {
+        &[Self::FirstnameFirst, Self::SurnameFirst, Self::DateFirst]
+    }
+
+    pub fn from_db_str(s: &str) -> Self {
+        match s {
+            "surname_first" => Self::SurnameFirst,
+            "date_first" => Self::DateFirst,
+            _ => Self::FirstnameFirst,
+        }
+    }
+}
+
+impl fmt::Display for DirNameFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FirstnameFirst => write!(f, "firstname_first"),
+            Self::SurnameFirst => write!(f, "surname_first"),
+            Self::DateFirst => write!(f, "date_first"),
+        }
+    }
+}
 
 /// Systemkonfiguration (singleton, id=1)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -7,6 +60,7 @@ pub struct SystemConfig {
     pub id: i64,
     pub media_directory_path: PathBuf,
     pub backup_directory_path: PathBuf,
+    pub dir_name_format: DirNameFormat,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -22,6 +76,7 @@ impl Default for SystemConfig {
             id: 1,
             media_directory_path: data_dir.join("media"),
             backup_directory_path: data_dir.join("backups"),
+            dir_name_format: DirNameFormat::default(),
             created_at: None,
             updated_at: None,
         }

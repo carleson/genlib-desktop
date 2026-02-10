@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use egui::{self, RichText};
 
 use crate::db::Database;
-use crate::models::SystemConfig;
+use crate::models::{DirNameFormat, SystemConfig};
 use crate::ui::{
     state::AppState,
     theme::{Colors, Icons},
@@ -15,6 +15,7 @@ use crate::ui::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WizardStep {
     Media,
+    DirFormat,
     Backup,
     Done,
 }
@@ -23,6 +24,7 @@ pub struct SetupWizardView {
     step: WizardStep,
     media_path: String,
     backup_path: String,
+    dir_name_format: DirNameFormat,
     needs_refresh: bool,
     error_message: Option<String>,
 }
@@ -39,6 +41,7 @@ impl SetupWizardView {
             step: WizardStep::Media,
             media_path: String::new(),
             backup_path: String::new(),
+            dir_name_format: DirNameFormat::default(),
             needs_refresh: true,
             error_message: None,
         }
@@ -63,6 +66,7 @@ impl SetupWizardView {
 
             match self.step {
                 WizardStep::Media => self.show_media_step(ui),
+                WizardStep::DirFormat => self.show_dir_format_step(ui),
                 WizardStep::Backup => self.show_backup_step(ui),
                 WizardStep::Done => self.show_done_step(ui, state, db),
             }
@@ -84,6 +88,26 @@ impl SetupWizardView {
                 }
             }
         });
+    }
+
+    fn show_dir_format_step(&mut self, ui: &mut egui::Ui) {
+        ui.label("Välj hur personkataloger ska namnges.");
+        ui.add_space(8.0);
+
+        for &fmt in DirNameFormat::all() {
+            let selected = self.dir_name_format == fmt;
+            if ui.radio(selected, fmt.label()).clicked() {
+                self.dir_name_format = fmt;
+            }
+            ui.indent(fmt.label(), |ui| {
+                ui.label(
+                    RichText::new(format!("Exempel: {}", fmt.example()))
+                        .small()
+                        .color(Colors::TEXT_MUTED),
+                );
+            });
+            ui.add_space(4.0);
+        }
     }
 
     fn show_backup_step(&mut self, ui: &mut egui::Ui) {
@@ -132,7 +156,8 @@ impl SetupWizardView {
                 if ui.button(format!("{} Tillbaka", Icons::ARROW_LEFT)).clicked() {
                     self.error_message = None;
                     self.step = match self.step {
-                        WizardStep::Backup => WizardStep::Media,
+                        WizardStep::DirFormat => WizardStep::Media,
+                        WizardStep::Backup => WizardStep::DirFormat,
                         WizardStep::Done => WizardStep::Backup,
                         WizardStep::Media => WizardStep::Media,
                     };
@@ -151,8 +176,17 @@ impl SetupWizardView {
                                     Some("Välj en media-katalog först.".to_string());
                             } else {
                                 self.error_message = None;
-                                self.step = WizardStep::Backup;
+                                self.step = WizardStep::DirFormat;
                             }
+                        }
+                    }
+                    WizardStep::DirFormat => {
+                        if ui
+                            .button(format!("{} Nästa", Icons::ARROW_RIGHT))
+                            .clicked()
+                        {
+                            self.error_message = None;
+                            self.step = WizardStep::Backup;
                         }
                     }
                     WizardStep::Backup => {
@@ -186,6 +220,7 @@ impl SetupWizardView {
         if let Ok(config) = db.config().get() {
             self.media_path = config.media_directory_path.display().to_string();
             self.backup_path = config.backup_directory_path.display().to_string();
+            self.dir_name_format = config.dir_name_format;
         }
         self.needs_refresh = false;
     }
@@ -195,6 +230,7 @@ impl SetupWizardView {
             id: 1,
             media_directory_path: PathBuf::from(self.media_path.trim()),
             backup_directory_path: PathBuf::from(self.backup_path.trim()),
+            dir_name_format: self.dir_name_format,
             created_at: None,
             updated_at: None,
         };
@@ -215,8 +251,9 @@ impl SetupWizardView {
     fn step_title(&self) -> &'static str {
         match self.step {
             WizardStep::Media => "Steg 1: Media-katalog",
-            WizardStep::Backup => "Steg 2: Backup-katalog",
-            WizardStep::Done => "Steg 3: Klar",
+            WizardStep::DirFormat => "Steg 2: Katalognamnformat",
+            WizardStep::Backup => "Steg 3: Backup-katalog",
+            WizardStep::Done => "Steg 4: Klar",
         }
     }
 }

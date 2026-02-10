@@ -110,6 +110,34 @@ impl SettingsView {
 
                     ui.add_space(16.0);
 
+                    // Katalognamnformat (read-only)
+                    egui::Frame::none()
+                        .fill(ui.visuals().extreme_bg_color)
+                        .rounding(8.0)
+                        .inner_margin(16.0)
+                        .show(ui, |ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.label(RichText::new("Katalognamnformat").strong());
+                            ui.add_space(8.0);
+
+                            if let Ok(config) = db.config().get() {
+                                ui.label(format!("Format: {}", config.dir_name_format.label()));
+                                ui.label(
+                                    RichText::new(format!("Exempel: {}", config.dir_name_format.example()))
+                                        .small()
+                                        .color(Colors::TEXT_MUTED),
+                                );
+                            }
+                            ui.add_space(4.0);
+                            ui.label(
+                                RichText::new("Ändras vid setup av nytt projekt.")
+                                    .small()
+                                    .color(Colors::TEXT_MUTED),
+                            );
+                        });
+
+                    ui.add_space(16.0);
+
                     // Dokumentmallar
                     egui::Frame::none()
                         .fill(ui.visuals().extreme_bg_color)
@@ -232,10 +260,13 @@ impl SettingsView {
         use crate::models::SystemConfig;
         use std::path::PathBuf;
 
+        let existing_format = db.config().get().map(|c| c.dir_name_format).unwrap_or_default();
+
         let config = SystemConfig {
             id: 1,
             media_directory_path: PathBuf::from(&self.media_path),
             backup_directory_path: PathBuf::from(&self.backup_path),
+            dir_name_format: existing_format,
             created_at: None,
             updated_at: None,
         };

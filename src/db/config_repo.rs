@@ -3,7 +3,7 @@ use rusqlite::{params, Connection};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::models::SystemConfig;
+use crate::models::{DirNameFormat, SystemConfig};
 
 pub struct ConfigRepository {
     conn: Arc<Mutex<Connection>>,
@@ -19,16 +19,18 @@ impl ConfigRepository {
         let conn = self.conn.lock().unwrap();
 
         let result = conn.query_row(
-            "SELECT id, media_directory_path, backup_directory_path, created_at, updated_at
+            "SELECT id, media_directory_path, backup_directory_path, dir_name_format, created_at, updated_at
              FROM system_config WHERE id = 1",
             [],
             |row| {
+                let format_str: String = row.get(3)?;
                 Ok(SystemConfig {
                     id: row.get(0)?,
                     media_directory_path: PathBuf::from(row.get::<_, String>(1)?),
                     backup_directory_path: PathBuf::from(row.get::<_, String>(2)?),
-                    created_at: row.get(3).ok(),
-                    updated_at: row.get(4).ok(),
+                    dir_name_format: DirNameFormat::from_db_str(&format_str),
+                    created_at: row.get(4).ok(),
+                    updated_at: row.get(5).ok(),
                 })
             },
         );
@@ -50,11 +52,12 @@ impl ConfigRepository {
         let conn = self.conn.lock().unwrap();
 
         conn.execute(
-            "INSERT OR REPLACE INTO system_config (id, media_directory_path, backup_directory_path, updated_at)
-             VALUES (1, ?1, ?2, datetime('now'))",
+            "INSERT OR REPLACE INTO system_config (id, media_directory_path, backup_directory_path, dir_name_format, updated_at)
+             VALUES (1, ?1, ?2, ?3, datetime('now'))",
             params![
                 config.media_directory_path.to_string_lossy().to_string(),
                 config.backup_directory_path.to_string_lossy().to_string(),
+                config.dir_name_format.to_string(),
             ],
         )?;
 

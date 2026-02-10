@@ -1,7 +1,7 @@
 /// SQL-schema för Genlib Desktop
 /// Kompatibelt med Django-export för migration
 
-pub const SCHEMA_VERSION: i32 = 2;
+pub const SCHEMA_VERSION: i32 = 3;
 
 pub const CREATE_TABLES: &str = r#"
 -- Systeminställningar (singleton, id=1)
@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS system_config (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     media_directory_path TEXT NOT NULL,
     backup_directory_path TEXT NOT NULL,
+    dir_name_format TEXT NOT NULL DEFAULT 'firstname_first',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

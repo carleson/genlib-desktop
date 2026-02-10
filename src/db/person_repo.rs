@@ -347,7 +347,7 @@ impl PersonRepository {
 
     /// Generera unikt katalognamn
     pub fn generate_unique_directory_name(&self, base_name: &str) -> Result<String> {
-        let base = Person::generate_directory_name(&Some(base_name.to_string()), &None);
+        let base = Person::sanitize_directory_name(base_name);
 
         if self.is_directory_name_unique(&base, None)? {
             return Ok(base);

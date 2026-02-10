@@ -129,7 +129,8 @@ impl<'a> GedcomImporter<'a> {
 
         // Räkna nya vs befintliga
         for indi in &data.individuals {
-            let dir_name = indi.generate_directory_name();
+            let fmt = self.db.config().get().map(|c| c.dir_name_format).unwrap_or_default();
+            let dir_name = indi.generate_directory_name(fmt);
             if self
                 .db
                 .persons()
@@ -186,7 +187,8 @@ impl<'a> GedcomImporter<'a> {
     }
 
     fn import_individual(&self, indi: &GedcomIndividual) -> Result<Option<i64>> {
-        let dir_name = indi.generate_directory_name();
+        let fmt = self.db.config().get().map(|c| c.dir_name_format).unwrap_or_default();
+        let dir_name = indi.generate_directory_name(fmt);
 
         // Kolla om personen redan finns
         if self

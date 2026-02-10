@@ -114,17 +114,42 @@ impl Person {
         Ok(())
     }
 
-    /// Generera ett katalognamn baserat på namn
-    pub fn generate_directory_name(firstname: &Option<String>, surname: &Option<String>) -> String {
-        let name = match (firstname, surname) {
-            (Some(f), Some(s)) => format!("{}_{}", f, s),
-            (Some(f), None) => f.clone(),
-            (None, Some(s)) => s.clone(),
-            (None, None) => "okand".to_string(),
+    /// Generera ett katalognamn baserat på namn, födelsedatum och format
+    pub fn generate_directory_name(
+        firstname: &Option<String>,
+        surname: &Option<String>,
+        birth_date: &Option<String>,
+        format: crate::models::DirNameFormat,
+    ) -> String {
+        let f = firstname.as_deref().unwrap_or("");
+        let s = surname.as_deref().unwrap_or("");
+        let d = birth_date.as_deref().unwrap_or("");
+
+        let parts: Vec<&str> = match format {
+            crate::models::DirNameFormat::FirstnameFirst => {
+                [f, s, d].into_iter().filter(|p| !p.is_empty()).collect()
+            }
+            crate::models::DirNameFormat::SurnameFirst => {
+                [s, f, d].into_iter().filter(|p| !p.is_empty()).collect()
+            }
+            crate::models::DirNameFormat::DateFirst => {
+                [d, f, s].into_iter().filter(|p| !p.is_empty()).collect()
+            }
         };
 
-        // Rensa och normalisera
-        name.to_lowercase()
+        let raw = if parts.is_empty() {
+            "okand".to_string()
+        } else {
+            parts.join("_")
+        };
+
+        Self::sanitize_directory_name(&raw)
+    }
+
+    /// Sanitera ett katalognamn (lowercase, ersätt svenska tecken, etc.)
+    pub fn sanitize_directory_name(name: &str) -> String {
+        let sanitized: String = name
+            .to_lowercase()
             .chars()
             .map(|c| match c {
                 'å' | 'ä' => 'a',
@@ -134,9 +159,24 @@ impl Person {
                 c if c.is_alphanumeric() || c == '_' => c,
                 _ => '_',
             })
-            .collect::<String>()
-            .trim_matches('_')
-            .to_string()
+            .collect();
+
+        // Ta bort dubbla understreck
+        let mut result = String::new();
+        let mut last_was_underscore = false;
+        for c in sanitized.chars() {
+            if c == '_' {
+                if !last_was_underscore {
+                    result.push(c);
+                }
+                last_was_underscore = true;
+            } else {
+                result.push(c);
+                last_was_underscore = false;
+            }
+        }
+
+        result.trim_matches('_').to_string()
     }
 }
 
@@ -168,13 +208,48 @@ mod tests {
 
     #[test]
     fn test_generate_directory_name() {
+        use crate::models::DirNameFormat;
+
+        // FirstnameFirst (default)
         assert_eq!(
-            Person::generate_directory_name(&Some("Johan".into()), &Some("Åkerström".into())),
-            "johan_akerstrom"
+            Person::generate_directory_name(
+                &Some("Johan".into()),
+                &Some("Åkerström".into()),
+                &Some("1921-12-07".into()),
+                DirNameFormat::FirstnameFirst,
+            ),
+            "johan_akerstrom_1921_12_07"
         );
         assert_eq!(
-            Person::generate_directory_name(&Some("Märta".into()), &None),
+            Person::generate_directory_name(
+                &Some("Märta".into()),
+                &None,
+                &None,
+                DirNameFormat::FirstnameFirst,
+            ),
             "marta"
+        );
+
+        // SurnameFirst
+        assert_eq!(
+            Person::generate_directory_name(
+                &Some("Johan".into()),
+                &Some("Åkerström".into()),
+                &Some("1921-12-07".into()),
+                DirNameFormat::SurnameFirst,
+            ),
+            "akerstrom_johan_1921_12_07"
+        );
+
+        // DateFirst
+        assert_eq!(
+            Person::generate_directory_name(
+                &Some("Johan".into()),
+                &Some("Åkerström".into()),
+                &Some("1921-12-07".into()),
+                DirNameFormat::DateFirst,
+            ),
+            "1921_12_07_johan_akerstrom"
         );
     }
 

@@ -58,52 +58,20 @@ impl GedcomIndividual {
         }
     }
 
-    /// Generera ett katalognamn baserat på namn och födelsedatum
-    pub fn generate_directory_name(&self) -> String {
-        let name_part = match (&self.firstname, &self.surname) {
-            (Some(f), Some(s)) => format!("{}_{}", s, f),
-            (Some(f), None) => f.clone(),
-            (None, Some(s)) => s.clone(),
-            (None, None) => "okand".to_string(),
-        };
-
-        let year_part = self
+    /// Generera ett katalognamn baserat på namn, födelsedatum och format
+    pub fn generate_directory_name(&self, format: crate::models::DirNameFormat) -> String {
+        let birth_str = self
             .birth_date
             .as_ref()
             .and_then(|d| d.to_naive_date())
-            .map(|d| format!("_{}", d.format("%Y")))
-            .unwrap_or_default();
+            .map(|d| d.format("%Y-%m-%d").to_string());
 
-        // Sanitera filnamnet
-        let sanitized: String = format!("{}{}", name_part, year_part)
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '_' || c == '-' {
-                    c.to_ascii_lowercase()
-                } else if c.is_whitespace() {
-                    '_'
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-
-        // Ta bort dubbla understreck
-        let mut result = String::new();
-        let mut last_was_underscore = false;
-        for c in sanitized.chars() {
-            if c == '_' {
-                if !last_was_underscore {
-                    result.push(c);
-                }
-                last_was_underscore = true;
-            } else {
-                result.push(c);
-                last_was_underscore = false;
-            }
-        }
-
-        result.trim_matches('_').to_string()
+        crate::models::Person::generate_directory_name(
+            &self.firstname,
+            &self.surname,
+            &birth_str,
+            format,
+        )
     }
 }
 
@@ -406,11 +374,22 @@ mod tests {
 
     #[test]
     fn test_generate_directory_name() {
+        use crate::models::DirNameFormat;
+
         let mut indi = GedcomIndividual::default();
         indi.firstname = Some("Johan".to_string());
         indi.surname = Some("Andersson".to_string());
         indi.birth_date = Some(GedcomDate::parse("1850"));
 
-        assert_eq!(indi.generate_directory_name(), "andersson_johan_1850");
+        // SurnameFirst
+        assert_eq!(
+            indi.generate_directory_name(DirNameFormat::SurnameFirst),
+            "andersson_johan_1850_01_01"
+        );
+        // FirstnameFirst
+        assert_eq!(
+            indi.generate_directory_name(DirNameFormat::FirstnameFirst),
+            "johan_andersson_1850_01_01"
+        );
     }
 }

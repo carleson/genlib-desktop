@@ -102,6 +102,7 @@ fn migrate_from(conn: &Connection, from_version: i32) -> Result<()> {
     for version in (from_version + 1)..=SCHEMA_VERSION {
         match version {
             2 => migrate_v1_to_v2(conn)?,
+            3 => migrate_v2_to_v3(conn)?,
             _ => {}
         }
 
@@ -134,6 +135,17 @@ fn migrate_v1_to_v2(conn: &Connection) -> Result<()> {
     )?;
 
     info!("Korrigerade {} relationer", affected);
+    Ok(())
+}
+
+/// Migration v2 -> v3: Lägg till dir_name_format i system_config
+fn migrate_v2_to_v3(conn: &Connection) -> Result<()> {
+    info!("Migration v3: Lägger till dir_name_format i system_config");
+
+    conn.execute_batch(
+        "ALTER TABLE system_config ADD COLUMN dir_name_format TEXT NOT NULL DEFAULT 'firstname_first';"
+    )?;
+
     Ok(())
 }
 
