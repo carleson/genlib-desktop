@@ -11,6 +11,15 @@ use crate::ui::{
 };
 use crate::utils::file_ops;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum PersonDetailTab {
+    #[default]
+    PersonInfo,
+    Documents,
+    Images,
+    Checklist,
+}
+
 pub struct PersonDetailView {
     person_cache: Option<Person>,
     document_count: i64,
@@ -22,6 +31,8 @@ pub struct PersonDetailView {
     profile_texture: Option<TextureHandle>,
     /// Sökväg till cachad profilbild
     profile_texture_path: Option<String>,
+    /// Vald flik
+    selected_tab: PersonDetailTab,
 }
 
 impl PersonDetailView {
@@ -35,6 +46,7 @@ impl PersonDetailView {
             image_gallery: ImageGallery::new(),
             profile_texture: None,
             profile_texture_path: None,
+            selected_tab: PersonDetailTab::default(),
         }
     }
 
@@ -117,40 +129,39 @@ impl PersonDetailView {
 
         ui.add_space(16.0);
 
-        // ScrollArea för allt innehåll
+        // Flikrad
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.selected_tab, PersonDetailTab::PersonInfo, format!("{} Personuppgifter", Icons::PERSON));
+            ui.selectable_value(&mut self.selected_tab, PersonDetailTab::Documents, format!("{} Dokument", Icons::DOCUMENT));
+            ui.selectable_value(&mut self.selected_tab, PersonDetailTab::Images, format!("{} Bilder", Icons::IMAGE));
+            ui.selectable_value(&mut self.selected_tab, PersonDetailTab::Checklist, format!("{} Checklista", Icons::CHECK));
+        });
+
+        ui.separator();
+
+        // Flikinnehåll
         egui::ScrollArea::vertical().show(ui, |ui| {
-            // Rad 1: Personuppgifter och relationer
-            ui.columns(2, |columns| {
-                // Vänster kolumn - personuppgifter
-                columns[0].vertical(|ui| {
-                    Self::show_person_info_static(ui, &person, self.profile_texture.as_ref());
-                });
-
-                // Höger kolumn - relationer
-                columns[1].vertical(|ui| {
-                    Self::show_relations_static(ui, state, db, person_id);
-                });
-            });
-
-            ui.add_space(16.0);
-
-            // Rad 2: Dokument och checklista
-            ui.columns(2, |columns| {
-                // Vänster kolumn - dokument
-                columns[0].vertical(|ui| {
+            match self.selected_tab {
+                PersonDetailTab::PersonInfo => {
+                    ui.columns(2, |columns| {
+                        columns[0].vertical(|ui| {
+                            Self::show_person_info_static(ui, &person, self.profile_texture.as_ref());
+                        });
+                        columns[1].vertical(|ui| {
+                            Self::show_relations_static(ui, state, db, person_id);
+                        });
+                    });
+                }
+                PersonDetailTab::Documents => {
                     Self::show_documents_panel(ui, state, db, person_id, document_count);
-                });
-
-                // Höger kolumn - checklista
-                columns[1].vertical(|ui| {
+                }
+                PersonDetailTab::Images => {
+                    self.show_image_gallery_panel(ui, state, db, person_id);
+                }
+                PersonDetailTab::Checklist => {
                     self.checklist_panel.show(ui, state, db, person_id);
-                });
-            });
-
-            ui.add_space(16.0);
-
-            // Rad 3: Bildgalleri
-            self.show_image_gallery_panel(ui, state, db, person_id);
+                }
+            }
         });
     }
 
@@ -304,6 +315,7 @@ impl PersonDetailView {
             .inner_margin(16.0)
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
+                ui.set_min_height(ui.available_height());
                 ui.heading("Personuppgifter");
                 ui.add_space(8.0);
 
@@ -368,6 +380,7 @@ impl PersonDetailView {
             .inner_margin(16.0)
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
+                ui.set_min_height(ui.available_height());
                 ui.horizontal(|ui| {
                     ui.heading("Relationer");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -490,7 +503,7 @@ impl PersonDetailView {
                     return;
                 }
 
-                egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
                     for (doc_type, docs) in grouped {
                         let type_name = doc_type.map(|t| t.name).unwrap_or_else(|| "Okategoriserade".to_string());
 
