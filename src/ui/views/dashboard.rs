@@ -8,6 +8,8 @@ pub struct DashboardView {
     person_count: i64,
     document_count: i64,
     total_size: i64,
+    tasks_completed: i64,
+    tasks_total: i64,
     needs_refresh: bool,
 }
 
@@ -17,6 +19,8 @@ impl DashboardView {
             person_count: 0,
             document_count: 0,
             total_size: 0,
+            tasks_completed: 0,
+            tasks_total: 0,
             needs_refresh: true,
         }
     }
@@ -42,6 +46,10 @@ impl DashboardView {
                 self.stat_card(ui, Icons::DOCUMENT, "Dokument", &self.document_count.to_string(), Colors::SUCCESS);
                 ui.add_space(8.0);
                 self.stat_card(ui, Icons::FOLDER, "Lagring", &format_size(self.total_size), Colors::WARNING);
+                ui.add_space(8.0);
+                let tasks_remaining = self.tasks_total - self.tasks_completed;
+                let tasks_label = format!("{} / {}", tasks_remaining, self.tasks_total);
+                self.stat_card(ui, Icons::CHECK, "Uppgifter kvar", &tasks_label, Colors::INFO);
             });
 
             ui.add_space(24.0);
@@ -132,6 +140,9 @@ impl DashboardView {
         self.person_count = db.persons().count().unwrap_or(0);
         self.document_count = db.documents().count().unwrap_or(0);
         self.total_size = db.documents().total_file_size().unwrap_or(0);
+        let (completed, total) = db.checklists().get_global_progress().unwrap_or((0, 0));
+        self.tasks_completed = completed;
+        self.tasks_total = total;
     }
 
     pub fn mark_needs_refresh(&mut self) {

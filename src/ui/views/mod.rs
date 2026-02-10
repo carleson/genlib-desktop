@@ -1,4 +1,5 @@
 pub mod backup_view;
+pub mod checklist_search;
 pub mod checklist_templates;
 pub mod dashboard;
 pub mod document_templates;
@@ -11,6 +12,7 @@ pub mod settings;
 pub mod setup_wizard;
 
 pub use backup_view::BackupView;
+pub use checklist_search::ChecklistSearchView;
 pub use checklist_templates::ChecklistTemplatesView;
 pub use dashboard::DashboardView;
 pub use document_templates::DocumentTemplatesView;

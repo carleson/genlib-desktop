@@ -9,8 +9,9 @@ use crate::ui::{
     state::AppState,
     theme::configure_style,
     views::{
-        BackupView, ChecklistTemplatesView, DashboardView, DocumentTemplatesView, DocumentViewerView,
-        FamilyTreeView, PersonDetailView, PersonListView, ReportsView, SettingsView, SetupWizardView,
+        BackupView, ChecklistSearchView, ChecklistTemplatesView, DashboardView, DocumentTemplatesView,
+        DocumentViewerView, FamilyTreeView, PersonDetailView, PersonListView, ReportsView, SettingsView,
+        SetupWizardView,
     },
     View,
 };
@@ -29,6 +30,7 @@ pub struct GenlibApp {
     family_tree: FamilyTreeView,
     settings: SettingsView,
     backup_view: BackupView,
+    checklist_search: ChecklistSearchView,
     checklist_templates: ChecklistTemplatesView,
     setup_wizard: SetupWizardView,
     reports_view: ReportsView,
@@ -92,6 +94,7 @@ impl GenlibApp {
             family_tree: FamilyTreeView::new(),
             settings: SettingsView::new(),
             backup_view: BackupView::new(),
+            checklist_search: ChecklistSearchView::new(),
             checklist_templates: ChecklistTemplatesView::new(),
             setup_wizard: SetupWizardView::new(),
             reports_view: ReportsView::new(),
@@ -120,6 +123,7 @@ impl GenlibApp {
             View::FamilyTree => self.family_tree.mark_needs_refresh(),
             View::Backup => self.backup_view.mark_needs_refresh(),
             View::SetupWizard => {}
+            View::ChecklistSearch => self.checklist_search.mark_needs_refresh(),
             View::ChecklistTemplates => self.checklist_templates.mark_needs_refresh(),
             View::Reports => self.reports_view.mark_needs_refresh(),
             View::DocumentTemplates => self.document_templates.mark_needs_refresh(),
@@ -149,6 +153,7 @@ impl eframe::App for GenlibApp {
                     (View::Dashboard, "📊 Dashboard"),
                     (View::PersonList, "👥 Personer"),
                     (View::FamilyTree, "🌳 Släktträd"),
+                    (View::ChecklistSearch, "✓ Uppgifter"),
                 ];
 
                 for (view, label) in nav_items {
@@ -233,6 +238,9 @@ impl eframe::App for GenlibApp {
                 }
                 View::SetupWizard => {
                     self.setup_wizard.show(ui, &mut self.state, &self.db);
+                }
+                View::ChecklistSearch => {
+                    self.checklist_search.show(ui, &mut self.state, &self.db);
                 }
                 View::ChecklistTemplates => {
                     self.checklist_templates.show(ui, &mut self.state, &self.db);

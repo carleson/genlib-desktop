@@ -30,7 +30,8 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_title(format!("Genlib - Släktforskning v{}", env!("CARGO_PKG_VERSION")))
             .with_inner_size([1280.0, 800.0])
-            .with_min_inner_size([800.0, 600.0]),
+            .with_min_inner_size([800.0, 600.0])
+            .with_drag_and_drop(true),
         ..Default::default()
     };
 
