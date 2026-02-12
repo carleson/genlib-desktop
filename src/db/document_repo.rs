@@ -256,6 +256,42 @@ impl DocumentRepository {
         Ok(count)
     }
 
+    /// Räkna antal bilder
+    pub fn count_images(&self) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM documents WHERE file_type IN ('jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp')",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Hämta senaste dokument (med personnamn)
+    pub fn find_recent(&self, limit: usize) -> Result<Vec<(Document, Option<String>)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT d.id, d.person_id, d.document_type_id, d.filename, d.relative_path,
+                    d.file_size, d.file_type, d.tags, d.file_modified_at, d.created_at, d.updated_at,
+                    COALESCE(p.firstname || ' ', '') || COALESCE(p.surname, '')
+             FROM documents d
+             LEFT JOIN persons p ON d.person_id = p.id
+             ORDER BY d.created_at DESC
+             LIMIT ?"
+        )?;
+
+        let results = stmt
+            .query_map([limit as i64], |row| {
+                let doc = Self::row_to_document(row);
+                let person_name: Option<String> = row.get(11).ok();
+                Ok((doc, person_name))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(results)
+    }
+
     /// Beräkna total filstorlek
     pub fn total_file_size(&self) -> Result<i64> {
         let conn = self.conn.lock().unwrap();

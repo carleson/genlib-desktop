@@ -7,6 +7,7 @@ pub struct DashboardView {
     // Cachad statistik
     person_count: i64,
     document_count: i64,
+    image_count: i64,
     total_size: i64,
     tasks_completed: i64,
     tasks_total: i64,
@@ -18,6 +19,7 @@ impl DashboardView {
         Self {
             person_count: 0,
             document_count: 0,
+            image_count: 0,
             total_size: 0,
             tasks_completed: 0,
             tasks_total: 0,
@@ -44,6 +46,8 @@ impl DashboardView {
                 self.stat_card(ui, Icons::PEOPLE, "Personer", &self.person_count.to_string(), Colors::PRIMARY);
                 ui.add_space(8.0);
                 self.stat_card(ui, Icons::DOCUMENT, "Dokument", &self.document_count.to_string(), Colors::SUCCESS);
+                ui.add_space(8.0);
+                self.stat_card(ui, Icons::IMAGE, "Bilder", &self.image_count.to_string(), Colors::PARENT);
                 ui.add_space(8.0);
                 self.stat_card(ui, Icons::FOLDER, "Lagring", &format_size(self.total_size), Colors::WARNING);
                 ui.add_space(8.0);
@@ -83,10 +87,21 @@ impl DashboardView {
             ui.add_space(24.0);
 
             // Senaste aktivitet
-            ui.heading("Senaste personer");
-            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.heading("Senaste personer");
+                    ui.add_space(8.0);
+                    self.show_recent_persons(ui, state, db);
+                });
 
-            self.show_recent_persons(ui, state, db);
+                ui.add_space(32.0);
+
+                ui.vertical(|ui| {
+                    ui.heading("Senaste dokument");
+                    ui.add_space(8.0);
+                    self.show_recent_documents(ui, state, db);
+                });
+            });
         });
     }
 
@@ -136,9 +151,31 @@ impl DashboardView {
         }
     }
 
+    fn show_recent_documents(&mut self, ui: &mut egui::Ui, state: &mut AppState, db: &Database) {
+        let recent = db.documents().find_recent(5).unwrap_or_default();
+
+        if recent.is_empty() {
+            ui.label(RichText::new("Inga dokument ännu.").color(Colors::TEXT_SECONDARY));
+            return;
+        }
+
+        for (doc, person_name) in recent {
+            ui.horizontal(|ui| {
+                ui.label(Icons::DOCUMENT);
+                if ui.link(&doc.filename).clicked() {
+                    state.navigate_to_person(doc.person_id);
+                }
+                if let Some(name) = person_name {
+                    ui.label(RichText::new(format!("({})", name.trim())).small().color(Colors::TEXT_MUTED));
+                }
+            });
+        }
+    }
+
     fn refresh_stats(&mut self, db: &Database) {
         self.person_count = db.persons().count().unwrap_or(0);
         self.document_count = db.documents().count().unwrap_or(0);
+        self.image_count = db.documents().count_images().unwrap_or(0);
         self.total_size = db.documents().total_file_size().unwrap_or(0);
         let (completed, total) = db.checklists().get_global_progress().unwrap_or((0, 0));
         self.tasks_completed = completed;
