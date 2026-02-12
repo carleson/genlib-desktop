@@ -11,7 +11,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-pub use person_repo::{PersonRepository, SearchFilter};
+pub use person_repo::{PersonRepository, SearchField, SearchFilter};
 pub use document_repo::DocumentRepository;
 pub use relationship_repo::RelationshipRepository;
 pub use config_repo::ConfigRepository;

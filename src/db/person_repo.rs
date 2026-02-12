@@ -5,11 +5,27 @@ use std::sync::{Arc, Mutex};
 
 use crate::models::Person;
 
+/// Vilket fält som sökningen gäller
+#[derive(Default, Clone, Copy, PartialEq)]
+pub enum SearchField {
+    /// Kombinerat förnamn + efternamn
+    #[default]
+    Name,
+    /// Endast förnamn
+    Firstname,
+    /// Endast efternamn
+    Surname,
+    /// Katalognamn
+    Directory,
+}
+
 /// Avancerade sökfilter för personlistan
 #[derive(Default, Clone)]
 pub struct SearchFilter {
-    /// Fritextsökning (namn, katalog, anteckningar)
+    /// Fritextsökning
     pub query: String,
+    /// Vilket fält som söks
+    pub search_field: SearchField,
     /// Filtrera på levande/avlidna (None = alla)
     pub filter_alive: Option<bool>,
     /// Född efter detta datum
@@ -158,12 +174,35 @@ impl PersonRepository {
 
         // Fritextsökning
         if !filter.query.is_empty() {
-            sql.push_str(&format!(
-                " AND (p.firstname LIKE ?{0} OR p.surname LIKE ?{0} OR p.directory_name LIKE ?{0})",
-                param_index
-            ));
-            params_vec.push(format!("%{}%", filter.query));
-            param_index += 1;
+            match filter.search_field {
+                SearchField::Name => {
+                    // Splitta i ord — varje ord måste matcha i förnamn eller efternamn
+                    let words: Vec<&str> = filter.query.split_whitespace().collect();
+                    for word in &words {
+                        sql.push_str(&format!(
+                            " AND (p.firstname LIKE ?{0} OR p.surname LIKE ?{0})",
+                            param_index
+                        ));
+                        params_vec.push(format!("%{}%", word));
+                        param_index += 1;
+                    }
+                }
+                SearchField::Firstname => {
+                    sql.push_str(&format!(" AND p.firstname LIKE ?{}", param_index));
+                    params_vec.push(format!("%{}%", filter.query));
+                    param_index += 1;
+                }
+                SearchField::Surname => {
+                    sql.push_str(&format!(" AND p.surname LIKE ?{}", param_index));
+                    params_vec.push(format!("%{}%", filter.query));
+                    param_index += 1;
+                }
+                SearchField::Directory => {
+                    sql.push_str(&format!(" AND p.directory_name LIKE ?{}", param_index));
+                    params_vec.push(format!("%{}%", filter.query));
+                    param_index += 1;
+                }
+            }
         }
 
         // Levande/avliden
@@ -496,15 +535,39 @@ mod tests {
         let mut p1 = Person::new(Some("Johan".into()), Some("Andersson".into()), "johan_a".into());
         let mut p2 = Person::new(Some("Maria".into()), Some("Andersson".into()), "maria_a".into());
         let mut p3 = Person::new(Some("Erik".into()), Some("Svensson".into()), "erik_s".into());
+        let mut p4 = Person::new(Some("Johan Tobias".into()), Some("Carleson".into()), "johan_t_c".into());
 
         repo.create(&mut p1).unwrap();
         repo.create(&mut p2).unwrap();
         repo.create(&mut p3).unwrap();
+        repo.create(&mut p4).unwrap();
 
         let results = repo.search("Andersson", None).unwrap();
         assert_eq!(results.len(), 2);
 
         let results = repo.search("Johan", None).unwrap();
+        assert_eq!(results.len(), 2); // Johan Andersson + Johan Tobias Carleson
+
+        // Sökning på fullständigt namn (förnamn + efternamn)
+        let results = repo.search("Johan Andersson", None).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].firstname, Some("Johan".into()));
+
+        let results = repo.search("Maria Andersson", None).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].firstname, Some("Maria".into()));
+
+        // Partiell namnmatchning
+        let results = repo.search("Erik Sv", None).unwrap();
+        assert_eq!(results.len(), 1);
+
+        // Sökning med mellannamn — "Johan Carleson" ska matcha "Johan Tobias Carleson"
+        let results = repo.search("Johan Carleson", None).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].firstname, Some("Johan Tobias".into()));
+
+        // Partiell mellannamn-sökning
+        let results = repo.search("Tobias Carleson", None).unwrap();
         assert_eq!(results.len(), 1);
     }
 

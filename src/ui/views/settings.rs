@@ -1,7 +1,11 @@
 use egui::{self, RichText};
 
 use crate::db::Database;
+use crate::models::config::{
+    default_shortcuts, AppSettings, ShortcutAction, ShortcutMap,
+};
 use crate::ui::{
+    shortcuts::capture_shortcut,
     state::AppState,
     theme::{Colors, Icons},
     View,
@@ -12,6 +16,11 @@ pub struct SettingsView {
     backup_path: String,
     needs_refresh: bool,
     status_message: Option<String>,
+    // Genvägar
+    shortcuts: ShortcutMap,
+    shortcuts_loaded: bool,
+    capturing_action: Option<ShortcutAction>,
+    conflict_warning: Option<String>,
 }
 
 impl SettingsView {
@@ -21,14 +30,33 @@ impl SettingsView {
             backup_path: String::new(),
             needs_refresh: true,
             status_message: None,
+            shortcuts: default_shortcuts(),
+            shortcuts_loaded: false,
+            capturing_action: None,
+            conflict_warning: None,
         }
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, state: &mut AppState, db: &Database) {
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &mut AppState,
+        db: &Database,
+        app_settings: &AppSettings,
+    ) {
         if self.needs_refresh {
             self.refresh_config(db);
             self.needs_refresh = false;
         }
+
+        // Ladda genvägar från app_settings första gången
+        if !self.shortcuts_loaded {
+            self.shortcuts = app_settings.shortcuts.clone();
+            self.shortcuts_loaded = true;
+        }
+
+        // Hantera tangentfångst
+        state.capturing_shortcut = self.capturing_action.is_some();
 
         let available_width = ui.available_width();
         let section_width = available_width * 0.8;
@@ -60,6 +88,11 @@ impl SettingsView {
                                 }
                             });
                         });
+
+                    ui.add_space(16.0);
+
+                    // Tangentbordsgenvägar
+                    self.show_shortcuts_section(ui, state);
 
                     ui.add_space(16.0);
 
@@ -247,6 +280,149 @@ impl SettingsView {
                 });
             });
         });
+    }
+
+    fn show_shortcuts_section(&mut self, ui: &mut egui::Ui, state: &mut AppState) {
+        // Hantera tangentfångst
+        if self.capturing_action.is_some() {
+            self.handle_capture(ui.ctx(), state);
+        }
+
+        egui::Frame::none()
+            .fill(ui.visuals().extreme_bg_color)
+            .rounding(8.0)
+            .inner_margin(16.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Tangentbordsgenvägar").strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("Återställ alla").clicked() {
+                            self.shortcuts = default_shortcuts();
+                            self.conflict_warning = None;
+                            state.shortcuts_to_apply = Some(self.shortcuts.clone());
+                            state.show_status("Genvägar återställda till standard", crate::ui::StatusType::Success);
+                        }
+                    });
+                });
+
+                ui.add_space(8.0);
+
+                // Konfliktvarning
+                if let Some(ref warning) = self.conflict_warning {
+                    ui.label(RichText::new(warning).color(Colors::WARNING).small());
+                    ui.add_space(4.0);
+                }
+
+                egui::Grid::new("shortcuts_grid")
+                    .num_columns(4)
+                    .spacing([16.0, 6.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        // Header
+                        ui.label(RichText::new("Åtgärd").strong().small());
+                        ui.label(RichText::new("Genväg").strong().small());
+                        ui.label(""); // Ändra
+                        ui.label(""); // Återställ
+                        ui.end_row();
+
+                        for &action in ShortcutAction::ALL {
+                            ui.label(action.label());
+
+                            let is_capturing = self.capturing_action == Some(action);
+
+                            if is_capturing {
+                                ui.label(
+                                    RichText::new("Tryck genväg...")
+                                        .color(Colors::INFO)
+                                        .italics(),
+                                );
+                                if ui.small_button("Avbryt").clicked() {
+                                    self.capturing_action = None;
+                                }
+                            } else {
+                                let display = self
+                                    .shortcuts
+                                    .get(&action)
+                                    .map(|s| s.display())
+                                    .unwrap_or_else(|| "—".to_string());
+                                ui.label(RichText::new(&display).monospace());
+                                if ui.small_button("Ändra").clicked() {
+                                    self.capturing_action = Some(action);
+                                    self.conflict_warning = None;
+                                }
+                            }
+
+                            // Återställ-knapp
+                            let defaults = default_shortcuts();
+                            let is_default = self.shortcuts.get(&action) == defaults.get(&action);
+                            if is_default {
+                                ui.label("");
+                            } else if ui.small_button("Standard").clicked() {
+                                if let Some(default_shortcut) = defaults.get(&action) {
+                                    self.shortcuts.insert(action, default_shortcut.clone());
+                                    state.shortcuts_to_apply = Some(self.shortcuts.clone());
+                                }
+                            }
+
+                            ui.end_row();
+                        }
+                    });
+
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(if cfg!(target_os = "macos") {
+                        "Tips: Cmd fungerar som Ctrl på macOS"
+                    } else {
+                        "Tips: Håll Ctrl, Alt eller Shift och tryck en tangent"
+                    })
+                    .small()
+                    .color(Colors::TEXT_MUTED),
+                );
+            });
+    }
+
+    fn handle_capture(&mut self, ctx: &egui::Context, state: &mut AppState) {
+        let Some(capturing) = self.capturing_action else {
+            return;
+        };
+
+        let Some(captured) = capture_shortcut(ctx) else {
+            return;
+        };
+
+        // Escape utan modifierare avbryter fångst
+        if captured.key == egui::Key::Escape
+            && !captured.modifiers.ctrl_or_cmd
+            && !captured.modifiers.shift
+            && !captured.modifiers.alt
+        {
+            self.capturing_action = None;
+            return;
+        }
+
+        // Kolla efter konflikter
+        let conflict = self
+            .shortcuts
+            .iter()
+            .find(|(a, s)| **a != capturing && **s == captured)
+            .map(|(a, _)| *a);
+
+        if let Some(conflicting) = conflict {
+            self.conflict_warning = Some(format!(
+                "Varning: {} använder redan {}",
+                conflicting.label(),
+                captured.display()
+            ));
+        } else {
+            self.conflict_warning = None;
+        }
+
+        self.shortcuts.insert(capturing, captured);
+        self.capturing_action = None;
+        // Spara direkt
+        state.shortcuts_to_apply = Some(self.shortcuts.clone());
     }
 
     fn refresh_config(&mut self, db: &Database) {

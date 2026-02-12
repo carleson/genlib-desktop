@@ -4,16 +4,9 @@ use std::path::PathBuf;
 use chrono::NaiveDate;
 use egui::{self, ColorImage, RichText, TextureHandle, TextureOptions};
 
-use crate::db::{Database, SearchFilter};
+use crate::db::{Database, SearchField, SearchFilter};
 use crate::models::Person;
 use crate::ui::{state::AppState, theme::{Colors, Icons}};
-
-#[derive(Clone, Copy, PartialEq)]
-enum SortField {
-    Surname,
-    Firstname,
-    BirthDate,
-}
 
 pub struct PersonListView {
     /// Sökfilter
@@ -25,9 +18,6 @@ pub struct PersonListView {
     birth_before_str: String,
     death_after_str: String,
     death_before_str: String,
-    /// Sortering
-    sort_by: SortField,
-    sort_ascending: bool,
     /// Cache
     persons_cache: Vec<Person>,
     bookmarks_cache: std::collections::HashSet<i64>,
@@ -47,8 +37,6 @@ impl PersonListView {
             birth_before_str: String::new(),
             death_after_str: String::new(),
             death_before_str: String::new(),
-            sort_by: SortField::Surname,
-            sort_ascending: true,
             persons_cache: Vec::new(),
             bookmarks_cache: std::collections::HashSet::new(),
             needs_refresh: true,
@@ -100,46 +88,48 @@ impl PersonListView {
 
             ui.add_space(8.0);
 
+            // Fokusera sökfältet om signalerat
+            let search_id = egui::Id::new("person_search_field");
+            if state.focus_search {
+                ui.memory_mut(|m| m.request_focus(search_id));
+                state.focus_search = false;
+            }
+
             // Sökfält och grundläggande filter
             ui.horizontal(|ui| {
                 // Sökfält
                 ui.label(Icons::SEARCH);
                 let search_response = ui.add(
                     egui::TextEdit::singleline(&mut self.filter.query)
-                        .hint_text("Sök på namn, katalog eller anteckningar...")
-                        .desired_width(250.0)
+                        .id(search_id)
+                        .hint_text("Sök...")
+                        .desired_width(200.0)
                 );
                 if search_response.changed() {
                     self.needs_refresh = true;
                 }
-
-                ui.separator();
-
-                // Sortering
-                egui::ComboBox::from_label("")
-                    .selected_text(match self.sort_by {
-                        SortField::Surname => "Efternamn",
-                        SortField::Firstname => "Förnamn",
-                        SortField::BirthDate => "Födelsedatum",
+                egui::ComboBox::from_id_salt("search_field")
+                    .selected_text(match self.filter.search_field {
+                        SearchField::Name => "Namn",
+                        SearchField::Firstname => "Förnamn",
+                        SearchField::Surname => "Efternamn",
+                        SearchField::Directory => "Katalog",
                     })
+                    .width(90.0)
                     .show_ui(ui, |ui| {
-                        if ui.selectable_value(&mut self.sort_by, SortField::Surname, "Efternamn").changed() {
+                        if ui.selectable_value(&mut self.filter.search_field, SearchField::Name, "Namn").changed() {
                             self.needs_refresh = true;
                         }
-                        if ui.selectable_value(&mut self.sort_by, SortField::Firstname, "Förnamn").changed() {
+                        if ui.selectable_value(&mut self.filter.search_field, SearchField::Firstname, "Förnamn").changed() {
                             self.needs_refresh = true;
                         }
-                        if ui.selectable_value(&mut self.sort_by, SortField::BirthDate, "Födelsedatum").changed() {
+                        if ui.selectable_value(&mut self.filter.search_field, SearchField::Surname, "Efternamn").changed() {
+                            self.needs_refresh = true;
+                        }
+                        if ui.selectable_value(&mut self.filter.search_field, SearchField::Directory, "Katalog").changed() {
                             self.needs_refresh = true;
                         }
                     });
-
-                // Sorteringsordning
-                let order_icon = if self.sort_ascending { "↑" } else { "↓" };
-                if ui.button(order_icon).clicked() {
-                    self.sort_ascending = !self.sort_ascending;
-                    self.needs_refresh = true;
-                }
 
                 ui.separator();
 
@@ -423,22 +413,10 @@ impl PersonListView {
             .advanced_search(&self.filter)
             .unwrap_or_default();
 
-        // Sortera
-        match self.sort_by {
-            SortField::Surname => {
-                self.persons_cache.sort_by(|a, b| a.surname.cmp(&b.surname));
-            }
-            SortField::Firstname => {
-                self.persons_cache.sort_by(|a, b| a.firstname.cmp(&b.firstname));
-            }
-            SortField::BirthDate => {
-                self.persons_cache.sort_by(|a, b| a.birth_date.cmp(&b.birth_date));
-            }
-        }
-
-        if !self.sort_ascending {
-            self.persons_cache.reverse();
-        }
+        // Sortera på efternamn, sedan förnamn
+        self.persons_cache.sort_by(|a, b| {
+            a.surname.cmp(&b.surname).then(a.firstname.cmp(&b.firstname))
+        });
 
         // Hämta bokmärken
         self.bookmarks_cache = db

@@ -4,8 +4,10 @@ use eframe::egui;
 use std::sync::Arc;
 
 use crate::db::Database;
+use crate::models::config::{AppSettings, ShortcutAction};
 use crate::ui::{
     modals::{ArchiveModal, ConfirmDialog, DocumentUploadModal, GedcomImportModal, PersonFormModal, RelationshipFormModal},
+    shortcuts::ShortcutManager,
     state::AppState,
     theme::configure_style,
     views::{
@@ -21,6 +23,8 @@ use crate::utils::path::get_database_path;
 pub struct GenlibApp {
     db: Arc<Database>,
     state: AppState,
+    app_settings: AppSettings,
+    shortcut_manager: ShortcutManager,
 
     // Vyer
     dashboard: DashboardView,
@@ -55,6 +59,10 @@ impl GenlibApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Konfigurera fonts
         configure_fonts(&cc.egui_ctx);
+
+        // Ladda appinställningar
+        let app_settings = AppSettings::load();
+        let shortcut_manager = ShortcutManager::new(app_settings.shortcuts.clone());
 
         // Öppna databas
         let db_path = get_database_path();
@@ -91,10 +99,13 @@ impl GenlibApp {
 
         let mut state = AppState::new();
         state.current_view = View::Splash;
+        state.dark_mode = app_settings.dark_mode;
 
         Self {
             db,
             state,
+            app_settings,
+            shortcut_manager,
             dashboard: DashboardView::new(),
             person_list: PersonListView::new(),
             person_detail: PersonDetailView::new(),
@@ -140,6 +151,82 @@ impl GenlibApp {
             View::DocumentTemplates => self.document_templates.mark_needs_refresh(),
         }
     }
+
+    /// Kolla om någon modal är öppen
+    fn any_modal_open(&self) -> bool {
+        self.state.show_person_form
+            || self.state.show_confirm_dialog
+            || self.state.show_document_upload
+            || self.state.show_relationship_form
+            || self.state.show_gedcom_import
+            || self.state.show_archive_modal
+    }
+
+    /// Stäng översta modalen
+    fn close_topmost_modal(&mut self) {
+        if self.state.show_confirm_dialog {
+            self.state.close_confirm();
+        } else if self.state.show_person_form {
+            self.state.close_person_form();
+        } else if self.state.show_document_upload {
+            self.state.close_document_upload();
+        } else if self.state.show_relationship_form {
+            self.state.show_relationship_form = false;
+        } else if self.state.show_gedcom_import {
+            self.state.show_gedcom_import = false;
+        } else if self.state.show_archive_modal {
+            self.state.show_archive_modal = false;
+        }
+    }
+
+    /// Navigera till vy via genväg
+    fn navigate_to(&mut self, view: View) {
+        let old = self.state.current_view;
+        self.state.current_view = view;
+        if old != view {
+            self.handle_view_change(view);
+        }
+    }
+
+    /// Hantera en genvägsåtgärd
+    fn handle_shortcut_action(&mut self, action: ShortcutAction, ctx: &egui::Context) {
+        let modal_open = self.any_modal_open();
+
+        // Om modal är öppen: tillåt bara CloseModal
+        if modal_open {
+            if action == ShortcutAction::CloseModal {
+                self.close_topmost_modal();
+            }
+            return;
+        }
+
+        match action {
+            ShortcutAction::NavigateDashboard => self.navigate_to(View::Dashboard),
+            ShortcutAction::NavigatePersonList => self.navigate_to(View::PersonList),
+            ShortcutAction::NavigateFamilyTree => self.navigate_to(View::FamilyTree),
+            ShortcutAction::NavigateChecklistSearch => self.navigate_to(View::ChecklistSearch),
+            ShortcutAction::NavigateSettings => self.navigate_to(View::Settings),
+            ShortcutAction::NewPerson => {
+                self.state.open_new_person_form();
+            }
+            ShortcutAction::FocusSearch => {
+                if self.state.current_view != View::PersonList {
+                    self.navigate_to(View::PersonList);
+                }
+                self.state.focus_search = true;
+            }
+            ShortcutAction::Backup => {
+                self.navigate_to(View::Backup);
+            }
+            ShortcutAction::CloseModal => {
+                // Ingen modal öppen — ignorera
+            }
+            ShortcutAction::ToggleDarkMode => {
+                self.state.dark_mode = !self.state.dark_mode;
+                configure_style(ctx, self.state.dark_mode);
+            }
+        }
+    }
 }
 
 impl eframe::App for GenlibApp {
@@ -165,25 +252,40 @@ impl eframe::App for GenlibApp {
             return;
         }
 
+        // Kortkommandon
+        if let Some(action) = self.shortcut_manager.check(ctx, self.state.capturing_shortcut) {
+            self.handle_shortcut_action(action, ctx);
+        }
+
+        // Applicera nya genvägar från inställningsvyn
+        if let Some(new_shortcuts) = self.state.shortcuts_to_apply.take() {
+            self.shortcut_manager.update_shortcuts(new_shortcuts.clone());
+            self.app_settings.shortcuts = new_shortcuts;
+            let _ = self.app_settings.save();
+        }
+
         // Topbar
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("Genlib");
                 ui.separator();
 
-                // Navigation
+                // Navigation med genvägs-hints
                 let nav_items = [
-                    (View::Dashboard, "📊 Dashboard"),
-                    (View::PersonList, "👥 Personer"),
-                    (View::FamilyTree, "🌳 Släktträd"),
-                    (View::ChecklistSearch, "✓ Uppgifter"),
+                    (View::Dashboard, "📊 Dashboard", ShortcutAction::NavigateDashboard),
+                    (View::PersonList, "👥 Personer", ShortcutAction::NavigatePersonList),
+                    (View::FamilyTree, "🌳 Släktträd", ShortcutAction::NavigateFamilyTree),
+                    (View::ChecklistSearch, "✓ Uppgifter", ShortcutAction::NavigateChecklistSearch),
                 ];
 
-                for (view, label) in nav_items {
-                    if ui
-                        .selectable_label(self.state.current_view == view, label)
-                        .clicked()
-                    {
+                for (view, label, shortcut_action) in nav_items {
+                    let hint = self.shortcut_manager.shortcut_hint(shortcut_action)
+                        .unwrap_or_default();
+                    let response = ui.selectable_label(self.state.current_view == view, label);
+                    if !hint.is_empty() {
+                        response.clone().on_hover_text(&hint);
+                    }
+                    if response.clicked() {
                         let old_view = self.state.current_view;
                         self.state.current_view = view;
                         if old_view != view {
@@ -196,7 +298,13 @@ impl eframe::App for GenlibApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Dark mode toggle
                     let mode_icon = if self.state.dark_mode { "🌙" } else { "☀" };
-                    if ui.button(mode_icon).clicked() {
+                    if ui.button(mode_icon)
+                        .on_hover_text(
+                            self.shortcut_manager.shortcut_hint(ShortcutAction::ToggleDarkMode)
+                                .unwrap_or_default()
+                        )
+                        .clicked()
+                    {
                         self.state.dark_mode = !self.state.dark_mode;
                         configure_style(ctx, self.state.dark_mode);
                     }
@@ -204,6 +312,10 @@ impl eframe::App for GenlibApp {
                     // Inställningar
                     if ui
                         .selectable_label(self.state.current_view == View::Settings, "⚙")
+                        .on_hover_text(
+                            self.shortcut_manager.shortcut_hint(ShortcutAction::NavigateSettings)
+                                .unwrap_or_default()
+                        )
                         .clicked()
                     {
                         self.state.current_view = View::Settings;
@@ -254,7 +366,7 @@ impl eframe::App for GenlibApp {
                     self.family_tree.show(ui, &mut self.state, &self.db);
                 }
                 View::Settings => {
-                    self.settings.show(ui, &mut self.state, &self.db);
+                    self.settings.show(ui, &mut self.state, &self.db, &self.app_settings);
                 }
                 View::Backup => {
                     self.backup_view.show(ui, &mut self.state, &self.db);

@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use crate::models::config::ShortcutMap;
+
 /// Aktuell vy i applikationen
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum View {
@@ -68,6 +70,15 @@ pub struct AppState {
 
     /// Dark mode
     pub dark_mode: bool,
+
+    /// Signal: fokusera sökfältet i personlistan
+    pub focus_search: bool,
+
+    /// Signal: nya genvägar att applicera (från inställningar)
+    pub shortcuts_to_apply: Option<ShortcutMap>,
+
+    /// Fångar ny genväg i inställningar (blockerar global genvägshantering)
+    pub capturing_shortcut: bool,
 }
 
 impl AppState {
