@@ -453,6 +453,32 @@ impl ChecklistRepository {
         Ok(count)
     }
 
+    /// Hämta senaste ej avklarade uppgifter (med personnamn)
+    pub fn find_recent(&self, limit: usize) -> Result<Vec<(PersonChecklistItem, Option<String>)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT pci.id, pci.person_id, pci.template_item_id, pci.title, pci.description,
+                    pci.category, pci.priority, pci.sort_order, pci.is_completed, pci.completed_at, pci.notes,
+                    COALESCE(p.firstname || ' ', '') || COALESCE(p.surname, '')
+             FROM person_checklist_items pci
+             LEFT JOIN persons p ON pci.person_id = p.id
+             WHERE pci.is_completed = 0
+             ORDER BY pci.priority DESC, pci.id DESC
+             LIMIT ?"
+        )?;
+
+        let results = stmt
+            .query_map([limit as i64], |row| {
+                let item = Self::row_to_item(row);
+                let person_name: Option<String> = row.get(11).ok();
+                Ok((item, person_name))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(results)
+    }
+
     /// Sök checklistobjekt globalt med personnamn- och datumfilter
     pub fn search_items_with_person(&self, filter: &ChecklistSearchFilter) -> Result<Vec<ChecklistSearchResult>> {
         let conn = self.conn.lock().unwrap();

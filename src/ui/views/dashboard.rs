@@ -97,6 +97,14 @@ impl DashboardView {
                 ui.add_space(32.0);
 
                 ui.vertical(|ui| {
+                    ui.heading("Senaste uppgifter");
+                    ui.add_space(8.0);
+                    self.show_recent_tasks(ui, state, db);
+                });
+
+                ui.add_space(32.0);
+
+                ui.vertical(|ui| {
                     ui.heading("Senaste dokument");
                     ui.add_space(8.0);
                     self.show_recent_documents(ui, state, db);
@@ -146,6 +154,27 @@ impl DashboardView {
                 let years = person.years_display();
                 if !years.is_empty() {
                     ui.label(RichText::new(years).small().color(Colors::TEXT_MUTED));
+                }
+            });
+        }
+    }
+
+    fn show_recent_tasks(&mut self, ui: &mut egui::Ui, state: &mut AppState, db: &Database) {
+        let recent = db.checklists().find_recent(5).unwrap_or_default();
+
+        if recent.is_empty() {
+            ui.label(RichText::new("Inga öppna uppgifter.").color(Colors::TEXT_SECONDARY));
+            return;
+        }
+
+        for (item, person_name) in recent {
+            ui.horizontal(|ui| {
+                ui.label(Icons::CHECK);
+                if ui.link(&item.title).clicked() {
+                    state.navigate_to_person(item.person_id);
+                }
+                if let Some(name) = person_name {
+                    ui.label(RichText::new(format!("({})", name.trim())).small().color(Colors::TEXT_MUTED));
                 }
             });
         }
