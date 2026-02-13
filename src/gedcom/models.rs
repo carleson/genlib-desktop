@@ -152,21 +152,31 @@ impl GedcomDate {
 
     fn extract_modifier(s: &str) -> (Option<DateModifier>, &str) {
         let upper = s.to_uppercase();
-        if upper.starts_with("ABT ") || upper.starts_with("ABT. ") {
+        if upper.starts_with("ABT. ") {
+            (Some(DateModifier::About), s[5..].trim())
+        } else if upper.starts_with("ABT ") {
             (Some(DateModifier::About), s[4..].trim())
         } else if upper.starts_with("ABOUT ") {
             (Some(DateModifier::About), s[6..].trim())
-        } else if upper.starts_with("BEF ") || upper.starts_with("BEF. ") {
+        } else if upper.starts_with("BEF. ") {
+            (Some(DateModifier::Before), s[5..].trim())
+        } else if upper.starts_with("BEF ") {
             (Some(DateModifier::Before), s[4..].trim())
         } else if upper.starts_with("BEFORE ") {
             (Some(DateModifier::Before), s[7..].trim())
-        } else if upper.starts_with("AFT ") || upper.starts_with("AFT. ") {
+        } else if upper.starts_with("AFT. ") {
+            (Some(DateModifier::After), s[5..].trim())
+        } else if upper.starts_with("AFT ") {
             (Some(DateModifier::After), s[4..].trim())
         } else if upper.starts_with("AFTER ") {
             (Some(DateModifier::After), s[6..].trim())
-        } else if upper.starts_with("EST ") || upper.starts_with("EST. ") {
+        } else if upper.starts_with("EST. ") {
+            (Some(DateModifier::Estimated), s[5..].trim())
+        } else if upper.starts_with("EST ") {
             (Some(DateModifier::Estimated), s[4..].trim())
-        } else if upper.starts_with("CAL ") || upper.starts_with("CAL. ") {
+        } else if upper.starts_with("CAL. ") {
+            (Some(DateModifier::Calculated), s[5..].trim())
+        } else if upper.starts_with("CAL ") {
             (Some(DateModifier::Calculated), s[4..].trim())
         } else if upper.starts_with("BET ") {
             (Some(DateModifier::Between), s[4..].trim())
@@ -358,18 +368,48 @@ mod tests {
         let date = GedcomDate::parse("1850-05-23");
         assert_eq!(date.date, NaiveDate::from_ymd_opt(1850, 5, 23));
 
-        // GEDCOM-format
+        // GEDCOM-format: dag månad år
         let date = GedcomDate::parse("23 MAY 1850");
         assert_eq!(date.date, NaiveDate::from_ymd_opt(1850, 5, 23));
 
-        // Med modifierare
+        // GEDCOM-format: enkel dag (8 FEB 1911)
+        let date = GedcomDate::parse("8 FEB 1911");
+        assert_eq!(date.date, NaiveDate::from_ymd_opt(1911, 2, 8));
+        assert_eq!(date.modifier, None);
+
+        // Med modifierare (utan punkt)
         let date = GedcomDate::parse("ABT 1850");
         assert_eq!(date.modifier, Some(DateModifier::About));
         assert_eq!(date.date, NaiveDate::from_ymd_opt(1850, 1, 1));
 
+        // Med modifierare (med punkt)
+        let date = GedcomDate::parse("ABT. 1850");
+        assert_eq!(date.modifier, Some(DateModifier::About));
+        assert_eq!(date.date, NaiveDate::from_ymd_opt(1850, 1, 1));
+
+        let date = GedcomDate::parse("BEF. 15 MAR 1900");
+        assert_eq!(date.modifier, Some(DateModifier::Before));
+        assert_eq!(date.date, NaiveDate::from_ymd_opt(1900, 3, 15));
+
+        let date = GedcomDate::parse("AFT. 1920");
+        assert_eq!(date.modifier, Some(DateModifier::After));
+        assert_eq!(date.date, NaiveDate::from_ymd_opt(1920, 1, 1));
+
+        let date = GedcomDate::parse("EST. JUN 1875");
+        assert_eq!(date.modifier, Some(DateModifier::Estimated));
+        assert_eq!(date.date, NaiveDate::from_ymd_opt(1875, 6, 1));
+
+        let date = GedcomDate::parse("CAL. 1800");
+        assert_eq!(date.modifier, Some(DateModifier::Calculated));
+        assert_eq!(date.date, NaiveDate::from_ymd_opt(1800, 1, 1));
+
         // Bara år
         let date = GedcomDate::parse("1850");
         assert_eq!(date.date, NaiveDate::from_ymd_opt(1850, 1, 1));
+
+        // Månad + år
+        let date = GedcomDate::parse("FEB 1911");
+        assert_eq!(date.date, NaiveDate::from_ymd_opt(1911, 2, 1));
     }
 
     #[test]

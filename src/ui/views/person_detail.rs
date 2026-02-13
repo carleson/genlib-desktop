@@ -354,6 +354,12 @@ impl PersonDetailView {
                                     ui.end_row();
                                 }
 
+                                if let Some(ref birth_place) = person.birth_place {
+                                    ui.label(RichText::new("Födelseort:").color(Colors::TEXT_SECONDARY));
+                                    ui.label(birth_place);
+                                    ui.end_row();
+                                }
+
                                 if let Some(birth_date) = person.birth_date {
                                     ui.label(RichText::new("Födelsedatum:").color(Colors::TEXT_SECONDARY));
                                     ui.label(format!("{} {}", Icons::CALENDAR, birth_date.format("%Y-%m-%d")));

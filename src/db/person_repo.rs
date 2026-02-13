@@ -94,7 +94,7 @@ impl PersonRepository {
     pub fn find_all(&self) -> Result<Vec<Person>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, firstname, surname, birth_date, death_date, age,
+            "SELECT id, firstname, surname, birth_place, birth_date, death_date, age,
                     directory_name, profile_image_path, created_at, updated_at
              FROM persons
              ORDER BY surname, firstname"
@@ -112,7 +112,7 @@ impl PersonRepository {
     pub fn find_by_id(&self, id: i64) -> Result<Option<Person>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, firstname, surname, birth_date, death_date, age,
+            "SELECT id, firstname, surname, birth_place, birth_date, death_date, age,
                     directory_name, profile_image_path, created_at, updated_at
              FROM persons
              WHERE id = ?"
@@ -129,7 +129,7 @@ impl PersonRepository {
     pub fn find_by_directory(&self, directory_name: &str) -> Result<Option<Person>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, firstname, surname, birth_date, death_date, age,
+            "SELECT id, firstname, surname, birth_place, birth_date, death_date, age,
                     directory_name, profile_image_path, created_at, updated_at
              FROM persons
              WHERE directory_name = ?"
@@ -157,7 +157,7 @@ impl PersonRepository {
         let conn = self.conn.lock().unwrap();
 
         let mut sql = String::from(
-            "SELECT DISTINCT p.id, p.firstname, p.surname, p.birth_date, p.death_date, p.age,
+            "SELECT DISTINCT p.id, p.firstname, p.surname, p.birth_place, p.birth_date, p.death_date, p.age,
                     p.directory_name, p.profile_image_path, p.created_at, p.updated_at
              FROM persons p"
         );
@@ -299,12 +299,13 @@ impl PersonRepository {
 
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO persons (firstname, surname, birth_date, death_date, age,
+            "INSERT INTO persons (firstname, surname, birth_place, birth_date, death_date, age,
                                   directory_name, profile_image_path)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 person.firstname,
                 person.surname,
+                person.birth_place,
                 person.birth_date.map(|d| d.to_string()),
                 person.death_date.map(|d| d.to_string()),
                 person.age,
@@ -328,13 +329,14 @@ impl PersonRepository {
         let conn = self.conn.lock().unwrap();
         let rows = conn.execute(
             "UPDATE persons SET
-                firstname = ?1, surname = ?2, birth_date = ?3, death_date = ?4,
-                age = ?5, directory_name = ?6, profile_image_path = ?7,
+                firstname = ?1, surname = ?2, birth_place = ?3, birth_date = ?4, death_date = ?5,
+                age = ?6, directory_name = ?7, profile_image_path = ?8,
                 updated_at = datetime('now')
-             WHERE id = ?8",
+             WHERE id = ?9",
             params![
                 person.firstname,
                 person.surname,
+                person.birth_place,
                 person.birth_date.map(|d| d.to_string()),
                 person.death_date.map(|d| d.to_string()),
                 person.age,
@@ -414,7 +416,7 @@ impl PersonRepository {
     pub fn get_bookmarked(&self) -> Result<Vec<Person>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT p.id, p.firstname, p.surname, p.birth_date, p.death_date, p.age,
+            "SELECT p.id, p.firstname, p.surname, p.birth_place, p.birth_date, p.death_date, p.age,
                     p.directory_name, p.profile_image_path, p.created_at, p.updated_at
              FROM persons p
              INNER JOIN bookmarked_persons bp ON p.id = bp.person_id
@@ -480,21 +482,22 @@ impl PersonRepository {
             id: row.get(0).ok(),
             firstname: row.get(1).ok(),
             surname: row.get(2).ok(),
+            birth_place: row.get(3).ok().flatten(),
             birth_date: row
-                .get::<_, Option<String>>(3)
-                .ok()
-                .flatten()
-                .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()),
-            death_date: row
                 .get::<_, Option<String>>(4)
                 .ok()
                 .flatten()
                 .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()),
-            age: row.get(5).ok(),
-            directory_name: row.get(6).unwrap_or_default(),
-            profile_image_path: row.get(7).ok(),
-            created_at: row.get(8).ok(),
-            updated_at: row.get(9).ok(),
+            death_date: row
+                .get::<_, Option<String>>(5)
+                .ok()
+                .flatten()
+                .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()),
+            age: row.get(6).ok(),
+            directory_name: row.get(7).unwrap_or_default(),
+            profile_image_path: row.get(8).ok(),
+            created_at: row.get(9).ok(),
+            updated_at: row.get(10).ok(),
         }
     }
 }

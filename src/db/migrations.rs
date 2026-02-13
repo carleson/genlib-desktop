@@ -103,6 +103,7 @@ fn migrate_from(conn: &Connection, from_version: i32) -> Result<()> {
         match version {
             2 => migrate_v1_to_v2(conn)?,
             3 => migrate_v2_to_v3(conn)?,
+            4 => migrate_v3_to_v4(conn)?,
             _ => {}
         }
 
@@ -135,6 +136,17 @@ fn migrate_v1_to_v2(conn: &Connection) -> Result<()> {
     )?;
 
     info!("Korrigerade {} relationer", affected);
+    Ok(())
+}
+
+/// Migration v3 -> v4: Lägg till birth_place i persons
+fn migrate_v3_to_v4(conn: &Connection) -> Result<()> {
+    info!("Migration v4: Lägger till birth_place i persons");
+
+    conn.execute_batch(
+        "ALTER TABLE persons ADD COLUMN birth_place TEXT;"
+    )?;
+
     Ok(())
 }
 

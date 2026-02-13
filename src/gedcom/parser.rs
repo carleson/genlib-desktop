@@ -272,6 +272,7 @@ impl GedcomParser {
         let mut date = None;
         let mut place = None;
         let base_level = lines[0].level;
+        let event_level = base_level + 1; // DATE och PLAC ligger direkt under eventet
         let mut i = 1;
 
         while i < lines.len() {
@@ -281,16 +282,20 @@ impl GedcomParser {
                 break;
             }
 
-            match line.tag.as_str() {
-                "DATE" => {
-                    if let Some(ref date_str) = line.value {
-                        date = Some(GedcomDate::parse(date_str));
+            // Matcha bara taggar på direkt undernivå (t.ex. level 2 under level 1 BIRT)
+            // Djupare nivåer (SOUR→DATA→DATE) ska ignoreras
+            if line.level == event_level {
+                match line.tag.as_str() {
+                    "DATE" => {
+                        if let Some(ref date_str) = line.value {
+                            date = Some(GedcomDate::parse(date_str));
+                        }
                     }
+                    "PLAC" => {
+                        place = line.value.clone();
+                    }
+                    _ => {}
                 }
-                "PLAC" => {
-                    place = line.value.clone();
-                }
-                _ => {}
             }
 
             i += 1;
@@ -395,5 +400,111 @@ mod tests {
         let (first, last) = GedcomParser::parse_name("Johan");
         assert_eq!(first, Some("Johan".to_string()));
         assert_eq!(last, None);
+    }
+
+    /// Test: djupt nästade SOUR/DATA/DATE-taggar under BIRT/DEAT ska INTE
+    /// skriva över det faktiska datumet. Bara DATE på direkt undernivå (level 2
+    /// under level 1) ska matchas.
+    #[test]
+    fn test_parse_event_ignores_nested_dates() {
+        let gedcom = r#"0 HEAD
+0 @I1@ INDI
+1 NAME Gunnar Reinhold /Carleson/
+1 SEX M
+1 BIRT
+2 DATE 12 MAR 1906
+2 PLAC Örkened församling, Kristianstads län, Sverige
+2 SOUR @S1104929828@
+3 PAGE Örkened (L) CI:8 (1895-1913) Bild 2240 / Sida 216
+3 QUAY 3
+3 DATA
+4 DATE 1895-1913
+3 NOTE @N0081@
+1 DEAT
+2 DATE 19 JAN 1971
+2 PLAC Växjö, Kronobergs län, Småland, Sverige
+2 SOUR @S-898380968@
+3 PAGE Begravning
+3 DATA
+4 DATE 23 SEP 2008
+4 TEXT Carlesson, Gunnar Reinhold f. 12/3 1906
+0 TRLR"#;
+
+        let data = GedcomParser::parse_string(gedcom).unwrap();
+        let gunnar = data.find_individual("@I1@").unwrap();
+
+        // Födelsedatum ska vara 12 MAR 1906, INTE 1895-1913
+        let birth = gunnar.birth_date.as_ref().expect("birth_date ska finnas");
+        assert_eq!(
+            birth.to_naive_date(),
+            chrono::NaiveDate::from_ymd_opt(1906, 3, 12),
+            "Födelsedatum ska vara 1906-03-12, inte överskrivna av nästade SOUR/DATA/DATE"
+        );
+
+        // Födelseort
+        assert_eq!(
+            gunnar.birth_place,
+            Some("Örkened församling, Kristianstads län, Sverige".to_string())
+        );
+
+        // Dödsdatum ska vara 19 JAN 1971, INTE 23 SEP 2008
+        let death = gunnar.death_date.as_ref().expect("death_date ska finnas");
+        assert_eq!(
+            death.to_naive_date(),
+            chrono::NaiveDate::from_ymd_opt(1971, 1, 19),
+            "Dödsdatum ska vara 1971-01-19, inte överskrivna av nästade SOUR/DATA/DATE"
+        );
+
+        assert_eq!(
+            gunnar.death_place,
+            Some("Växjö, Kronobergs län, Småland, Sverige".to_string())
+        );
+    }
+
+    /// Test: NAME-taggens undertaggar (SOUR med nästade DATE) ska inte
+    /// störa parsning av BIRT längre ner i posten.
+    #[test]
+    fn test_parse_complex_indi_with_name_sources() {
+        let gedcom = r#"0 HEAD
+0 @I1@ INDI
+1 NAME Gunnar Reinhold /Carleson/
+2 TYPE birth
+2 GIVN Gunnar Reinhold
+2 SURN Carleson
+2 SOUR @S-1391455793@
+3 DATA
+4 TEXT Födelsedatum: 12 Mar 1906
+2 SOUR @S1104929828@
+3 DATA
+4 DATE 1895-1913
+1 SEX M
+1 BIRT
+2 DATE 12 MAR 1906
+2 PLAC Örkened, Kristianstads län
+1 DEAT
+2 DATE 19 JAN 1971
+1 BAPM
+2 DATE 15 APR 1906
+2 PLAC Växjö
+0 TRLR"#;
+
+        let data = GedcomParser::parse_string(gedcom).unwrap();
+        let gunnar = data.find_individual("@I1@").unwrap();
+
+        assert_eq!(gunnar.firstname, Some("Gunnar Reinhold".to_string()));
+        assert_eq!(gunnar.surname, Some("Carleson".to_string()));
+
+        // Födelsedatum: 12 MAR 1906
+        assert_eq!(
+            gunnar.birth_date.as_ref().unwrap().to_naive_date(),
+            chrono::NaiveDate::from_ymd_opt(1906, 3, 12)
+        );
+        assert_eq!(gunnar.birth_place, Some("Örkened, Kristianstads län".to_string()));
+
+        // Dödsdatum: 19 JAN 1971
+        assert_eq!(
+            gunnar.death_date.as_ref().unwrap().to_naive_date(),
+            chrono::NaiveDate::from_ymd_opt(1971, 1, 19)
+        );
     }
 }

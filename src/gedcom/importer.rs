@@ -209,6 +209,7 @@ impl<'a> GedcomImporter<'a> {
             id: None,
             firstname: indi.firstname.clone(),
             surname: indi.surname.clone(),
+            birth_place: indi.birth_place.clone(),
             birth_date: indi.birth_date.as_ref().and_then(|d| d.to_naive_date()),
             death_date: indi.death_date.as_ref().and_then(|d| d.to_naive_date()),
             directory_name: unique_dir_name,
@@ -253,19 +254,21 @@ impl<'a> GedcomImporter<'a> {
         }
 
         // Skapa förälder-barn-relationer
+        // Tredje argumentet till PersonRelationship::new() = vad person_1 ÄR till person_2
+        // Förälder ÄR Parent TILL barn → RelationshipType::Parent
         for child_gedcom_id in &family.children_ids {
             if let Some(&child_db_id) = id_map.get(child_gedcom_id) {
-                // Far-barn
+                // Far är förälder till barn
                 if let Some(h_id) = husband_db_id {
-                    if self.create_relation_if_not_exists(h_id, child_db_id, RelationshipType::Child)?
+                    if self.create_relation_if_not_exists(h_id, child_db_id, RelationshipType::Parent)?
                     {
                         count += 1;
                     }
                 }
 
-                // Mor-barn
+                // Mor är förälder till barn
                 if let Some(w_id) = wife_db_id {
-                    if self.create_relation_if_not_exists(w_id, child_db_id, RelationshipType::Child)?
+                    if self.create_relation_if_not_exists(w_id, child_db_id, RelationshipType::Parent)?
                     {
                         count += 1;
                     }
@@ -439,5 +442,198 @@ mod tests {
         // Verifiera att personerna finns
         let persons = db.persons().find_all().unwrap();
         assert_eq!(persons.len(), 3);
+    }
+
+    /// Utförligt test: verifierar relationsriktningar, datum och födelseort
+    /// genom hela import-pipelinen (GEDCOM → parser → importer → DB → repo-query)
+    #[test]
+    fn test_import_family_relationships_correct_direction() {
+        use chrono::NaiveDate;
+        use crate::models::RelationshipType;
+
+        let db = Database::open_in_memory().unwrap();
+        db.migrate().unwrap();
+
+        let importer = GedcomImporter::new(&db);
+
+        // Komplett GEDCOM med familj: far + mor + 2 barn, alla med fullständiga datum
+        let gedcom = r#"0 HEAD
+1 SOUR TestProgram
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Karl /Johansson/
+1 SEX M
+1 BIRT
+2 DATE 12 MAR 1906
+2 PLAC Lund, Malmöhus län, Sverige
+1 DEAT
+2 DATE 3 OCT 1985
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Maria /Persson/
+1 SEX F
+1 BIRT
+2 DATE 8 FEB 1911
+2 PLAC Stockholm
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Erik /Johansson/
+1 SEX M
+1 BIRT
+2 DATE 15 JUN 1935
+2 PLAC Malmö
+1 FAMC @F1@
+0 @I4@ INDI
+1 NAME Anna /Johansson/
+1 SEX F
+1 BIRT
+2 DATE 22 DEC 1938
+1 FAMC @F1@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 CHIL @I3@
+1 CHIL @I4@
+1 MARR
+2 DATE 5 MAY 1934
+2 PLAC Lund
+0 TRLR"#;
+
+        let data = GedcomParser::parse_string(gedcom).unwrap();
+        assert_eq!(data.individual_count(), 4);
+        assert_eq!(data.family_count(), 1);
+
+        let result = importer.import_data(&data).unwrap();
+        assert_eq!(result.persons_imported, 4);
+        // Relationer: 1 make/maka + 2 far-barn + 2 mor-barn + 1 syskon = 6
+        assert_eq!(result.relations_imported, 6);
+
+        // Hämta alla personer
+        let persons = db.persons().find_all().unwrap();
+        assert_eq!(persons.len(), 4);
+
+        let karl = persons.iter().find(|p| p.firstname.as_deref() == Some("Karl")).unwrap();
+        let maria = persons.iter().find(|p| p.firstname.as_deref() == Some("Maria")).unwrap();
+        let erik = persons.iter().find(|p| p.firstname.as_deref() == Some("Erik")).unwrap();
+        let anna = persons.iter().find(|p| p.firstname.as_deref() == Some("Anna")).unwrap();
+
+        let karl_id = karl.id.unwrap();
+        let maria_id = maria.id.unwrap();
+        let erik_id = erik.id.unwrap();
+        let anna_id = anna.id.unwrap();
+
+        // --- Verifiera datum ---
+        assert_eq!(karl.birth_date, NaiveDate::from_ymd_opt(1906, 3, 12));
+        assert_eq!(karl.death_date, NaiveDate::from_ymd_opt(1985, 10, 3));
+        assert_eq!(maria.birth_date, NaiveDate::from_ymd_opt(1911, 2, 8));
+        assert_eq!(erik.birth_date, NaiveDate::from_ymd_opt(1935, 6, 15));
+        assert_eq!(anna.birth_date, NaiveDate::from_ymd_opt(1938, 12, 22));
+
+        // --- Verifiera födelseort ---
+        assert_eq!(karl.birth_place, Some("Lund, Malmöhus län, Sverige".to_string()));
+        assert_eq!(maria.birth_place, Some("Stockholm".to_string()));
+        assert_eq!(erik.birth_place, Some("Malmö".to_string()));
+        assert_eq!(anna.birth_place, None); // Anna hade ingen PLAC
+
+        // --- Verifiera relationer från Karls perspektiv (far) ---
+        let karl_rels = db.relationships().find_by_person_with_names(karl_id).unwrap();
+        // Karl ska ha: Make/Maka(Maria), Barn(Erik), Barn(Anna)
+        let karl_spouse: Vec<_> = karl_rels.iter()
+            .filter(|r| r.relationship_type == RelationshipType::Spouse)
+            .collect();
+        assert_eq!(karl_spouse.len(), 1, "Karl ska ha 1 make/maka-relation");
+        assert_eq!(karl_spouse[0].other_person_id, maria_id);
+
+        let karl_children: Vec<_> = karl_rels.iter()
+            .filter(|r| r.relationship_type == RelationshipType::Child)
+            .collect();
+        assert_eq!(karl_children.len(), 2, "Karl ska ha 2 barn");
+        let karl_child_ids: Vec<i64> = karl_children.iter().map(|r| r.other_person_id).collect();
+        assert!(karl_child_ids.contains(&erik_id), "Erik ska vara Karls barn");
+        assert!(karl_child_ids.contains(&anna_id), "Anna ska vara Karls barn");
+
+        // Karl ska INTE ha några föräldrar
+        let karl_parents: Vec<_> = karl_rels.iter()
+            .filter(|r| r.relationship_type == RelationshipType::Parent)
+            .collect();
+        assert_eq!(karl_parents.len(), 0, "Karl ska INTE ha föräldrar i detta dataset");
+
+        // --- Verifiera relationer från Eriks perspektiv (barn) ---
+        let erik_rels = db.relationships().find_by_person_with_names(erik_id).unwrap();
+        // Erik ska ha: Förälder(Karl), Förälder(Maria), Syskon(Anna)
+        let erik_parents: Vec<_> = erik_rels.iter()
+            .filter(|r| r.relationship_type == RelationshipType::Parent)
+            .collect();
+        assert_eq!(erik_parents.len(), 2, "Erik ska ha 2 föräldrar");
+        let erik_parent_ids: Vec<i64> = erik_parents.iter().map(|r| r.other_person_id).collect();
+        assert!(erik_parent_ids.contains(&karl_id), "Karl ska vara Eriks förälder");
+        assert!(erik_parent_ids.contains(&maria_id), "Maria ska vara Eriks förälder");
+
+        // Erik ska INTE ha barn
+        let erik_children: Vec<_> = erik_rels.iter()
+            .filter(|r| r.relationship_type == RelationshipType::Child)
+            .collect();
+        assert_eq!(erik_children.len(), 0, "Erik ska INTE ha barn i detta dataset");
+
+        let erik_siblings: Vec<_> = erik_rels.iter()
+            .filter(|r| r.relationship_type == RelationshipType::Sibling)
+            .collect();
+        assert_eq!(erik_siblings.len(), 1, "Erik ska ha 1 syskon");
+        assert_eq!(erik_siblings[0].other_person_id, anna_id);
+
+        // --- Verifiera relationer från Annas perspektiv (barn) ---
+        let anna_rels = db.relationships().find_by_person_with_names(anna_id).unwrap();
+        let anna_parents: Vec<_> = anna_rels.iter()
+            .filter(|r| r.relationship_type == RelationshipType::Parent)
+            .collect();
+        assert_eq!(anna_parents.len(), 2, "Anna ska ha 2 föräldrar");
+
+        let anna_siblings: Vec<_> = anna_rels.iter()
+            .filter(|r| r.relationship_type == RelationshipType::Sibling)
+            .collect();
+        assert_eq!(anna_siblings.len(), 1, "Anna ska ha 1 syskon");
+        assert_eq!(anna_siblings[0].other_person_id, erik_id);
+    }
+
+    #[test]
+    fn test_import_full_dates_and_birth_place() {
+        use chrono::NaiveDate;
+
+        let db = Database::open_in_memory().unwrap();
+        db.migrate().unwrap();
+
+        let importer = GedcomImporter::new(&db);
+
+        let gedcom = r#"0 HEAD
+0 @I1@ INDI
+1 NAME Karl /Johansson/
+1 BIRT
+2 DATE 12 MAR 1906
+2 PLAC Lund, Malmöhus län, Sverige
+1 DEAT
+2 DATE 3 OCT 1985
+0 @I2@ INDI
+1 NAME Maria /Persson/
+1 BIRT
+2 DATE 8 FEB 1911
+2 PLAC Stockholm
+0 TRLR"#;
+
+        let data = GedcomParser::parse_string(gedcom).unwrap();
+        let result = importer.import_data(&data).unwrap();
+
+        assert_eq!(result.persons_imported, 2);
+
+        // Verifiera Karl
+        let persons = db.persons().find_all().unwrap();
+        let karl = persons.iter().find(|p| p.firstname.as_deref() == Some("Karl")).unwrap();
+        assert_eq!(karl.birth_date, NaiveDate::from_ymd_opt(1906, 3, 12));
+        assert_eq!(karl.death_date, NaiveDate::from_ymd_opt(1985, 10, 3));
+        assert_eq!(karl.birth_place, Some("Lund, Malmöhus län, Sverige".to_string()));
+
+        // Verifiera Maria
+        let maria = persons.iter().find(|p| p.firstname.as_deref() == Some("Maria")).unwrap();
+        assert_eq!(maria.birth_date, NaiveDate::from_ymd_opt(1911, 2, 8));
+        assert_eq!(maria.birth_place, Some("Stockholm".to_string()));
     }
 }

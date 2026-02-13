@@ -217,6 +217,7 @@ pub enum DocumentUploadMode {
 pub struct PersonFormData {
     pub firstname: String,
     pub surname: String,
+    pub birth_place: String,
     pub birth_date: String,
     pub death_date: String,
     pub directory_name: String,
@@ -231,6 +232,7 @@ impl PersonFormData {
         Self {
             firstname: person.firstname.clone().unwrap_or_default(),
             surname: person.surname.clone().unwrap_or_default(),
+            birth_place: person.birth_place.clone().unwrap_or_default(),
             birth_date: person
                 .birth_date
                 .map(|d| d.format("%Y-%m-%d").to_string())

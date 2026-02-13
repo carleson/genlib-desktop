@@ -1,7 +1,7 @@
 /// SQL-schema för Genlib Desktop
 /// Kompatibelt med Django-export för migration
 
-pub const SCHEMA_VERSION: i32 = 3;
+pub const SCHEMA_VERSION: i32 = 4;
 
 pub const CREATE_TABLES: &str = r#"
 -- Systeminställningar (singleton, id=1)
@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS persons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     firstname TEXT,
     surname TEXT,
+    birth_place TEXT,
     birth_date TEXT,
     death_date TEXT,
     age INTEGER,
