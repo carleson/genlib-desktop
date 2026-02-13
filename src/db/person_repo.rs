@@ -17,6 +17,8 @@ pub enum SearchField {
     Surname,
     /// Katalognamn
     Directory,
+    /// Födelseplats
+    BirthPlace,
 }
 
 /// Avancerade sökfilter för personlistan
@@ -199,6 +201,11 @@ impl PersonRepository {
                 }
                 SearchField::Directory => {
                     sql.push_str(&format!(" AND p.directory_name LIKE ?{}", param_index));
+                    params_vec.push(format!("%{}%", filter.query));
+                    param_index += 1;
+                }
+                SearchField::BirthPlace => {
+                    sql.push_str(&format!(" AND p.birth_place LIKE ?{}", param_index));
                     params_vec.push(format!("%{}%", filter.query));
                     param_index += 1;
                 }

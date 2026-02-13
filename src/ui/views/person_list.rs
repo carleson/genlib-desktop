@@ -114,6 +114,7 @@ impl PersonListView {
                         SearchField::Firstname => "Förnamn",
                         SearchField::Surname => "Efternamn",
                         SearchField::Directory => "Katalog",
+                        SearchField::BirthPlace => "Födelseplats",
                     })
                     .width(90.0)
                     .show_ui(ui, |ui| {
@@ -127,6 +128,9 @@ impl PersonListView {
                             self.needs_refresh = true;
                         }
                         if ui.selectable_value(&mut self.filter.search_field, SearchField::Directory, "Katalog").changed() {
+                            self.needs_refresh = true;
+                        }
+                        if ui.selectable_value(&mut self.filter.search_field, SearchField::BirthPlace, "Födelseplats").changed() {
                             self.needs_refresh = true;
                         }
                     });
@@ -373,6 +377,11 @@ impl PersonListView {
                                     let years = person.years_display();
                                     if !years.is_empty() {
                                         ui.label(RichText::new(years).small().color(Colors::TEXT_SECONDARY));
+                                    }
+                                    if let Some(ref place) = person.birth_place {
+                                        if !place.is_empty() {
+                                            ui.label(RichText::new(place).small().color(Colors::TEXT_SECONDARY));
+                                        }
                                     }
                                 });
 
