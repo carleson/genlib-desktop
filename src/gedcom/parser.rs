@@ -173,10 +173,14 @@ impl GedcomParser {
 
             match line.tag.as_str() {
                 "NAME" => {
-                    if let Some(ref name) = line.value {
-                        let (firstname, surname) = Self::parse_name(name);
-                        indi.firstname = firstname;
-                        indi.surname = surname;
+                    // Bara använda första NAME-posten (efterföljande kan vara
+                    // alternativa namn som TYPE aka utan förnamn)
+                    if indi.firstname.is_none() && indi.surname.is_none() {
+                        if let Some(ref name) = line.value {
+                            let (firstname, surname) = Self::parse_name(name);
+                            indi.firstname = firstname;
+                            indi.surname = surname;
+                        }
                     }
                 }
                 "SEX" => {
@@ -505,6 +509,40 @@ mod tests {
         assert_eq!(
             gunnar.death_date.as_ref().unwrap().to_naive_date(),
             chrono::NaiveDate::from_ymd_opt(1971, 1, 19)
+        );
+    }
+
+    /// Test: Multipla NAME-poster – andra NAME (TYPE aka) utan förnamn
+    /// ska inte skriva över förnamnet från första NAME-posten.
+    #[test]
+    fn test_parse_multiple_name_records() {
+        let gedcom = r#"0 HEAD
+0 @P33@ INDI
+1 NAME Johan Peter /Carleson/
+2 TYPE birth
+2 GIVN Johan Peter
+2 SURN Carleson
+1 NAME  /Carlsson/
+2 TYPE aka
+2 SURN Carlsson
+1 SEX M
+1 BIRT
+2 DATE 15 NOV 1875
+2 PLAC Virestad, Kronobergs län
+0 TRLR"#;
+
+        let data = GedcomParser::parse_string(gedcom).unwrap();
+        let person = data.find_individual("@P33@").unwrap();
+
+        assert_eq!(person.firstname, Some("Johan Peter".to_string()),
+            "Förnamnet från första NAME ska bevaras trots andra NAME utan förnamn");
+        assert_eq!(person.surname, Some("Carleson".to_string()),
+            "Efternamnet från första NAME ska bevaras");
+
+        assert_eq!(person.sex, Some("M".to_string()));
+        assert_eq!(
+            person.birth_date.as_ref().unwrap().to_naive_date(),
+            chrono::NaiveDate::from_ymd_opt(1875, 11, 15)
         );
     }
 }
