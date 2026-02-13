@@ -17,7 +17,7 @@ pub struct GalleryAction {
     pub set_profile_image: Option<String>,
     /// Användaren vill radera en bild (document_id, filename)
     pub delete_image: Option<(i64, String)>,
-    /// Användaren dubbelklickade på en bild — öppna dokumentvisaren (document_id)
+    /// Användaren klickade på en bild — öppna dokumentvisaren (document_id)
     pub open_document: Option<i64>,
 }
 
@@ -45,6 +45,10 @@ pub struct ImageGallery {
     pending_profile_image: Option<String>,
     /// Bild som ska raderas (returneras till caller)
     pending_delete: Option<(i64, String)>,
+    /// Dokument som ska öppnas i dokumentvisaren (returneras till caller)
+    pending_open_document: Option<i64>,
+    /// Zoom-nivå i lightbox (1.0 = originalstorlek relativt fönstret)
+    zoom_level: f32,
 }
 
 impl Default for ImageGallery {
@@ -70,6 +74,8 @@ impl ImageGallery {
             person_dir: None,
             pending_profile_image: None,
             pending_delete: None,
+            pending_open_document: None,
+            zoom_level: 1.0,
         }
     }
 
@@ -110,9 +116,6 @@ impl ImageGallery {
             let _ = self.get_or_load_thumbnail(ui.ctx(), *image_id, &image_path);
         }
 
-        let mut clicked_image: Option<i64> = None;
-        let mut double_clicked_image: Option<i64> = None;
-
         egui::Grid::new("image_gallery_grid")
             .spacing([spacing, spacing])
             .show(ui, |ui| {
@@ -124,7 +127,7 @@ impl ImageGallery {
                     // Hämta thumbnail (redan laddad)
                     let texture = self.thumbnails.get(image_id);
 
-                    // Visa thumbnail (sense = click för att fånga både enkel- och dubbelklick)
+                    // Visa thumbnail
                     let response = if let Some(tex) = texture {
                         let size = egui::vec2(thumbnail_size, thumbnail_size);
                         ui.add(egui::Image::new(tex).fit_to_exact_size(size).sense(egui::Sense::click()))
@@ -146,13 +149,9 @@ impl ImageGallery {
                         response
                     };
 
-                    // Dubbelklick → öppna dokumentvisare
-                    if response.double_clicked() {
-                        double_clicked_image = Some(*image_id);
-                    }
-                    // Enkelklick → lightbox
-                    else if response.clicked() {
-                        clicked_image = Some(*image_id);
+                    // Enkelklick → öppna lightbox
+                    if response.clicked() {
+                        self.selected_image = Some(*image_id);
                     }
 
                     // Hover-effekt
@@ -162,23 +161,22 @@ impl ImageGallery {
                 }
             });
 
-        if let Some(id) = double_clicked_image {
-            action.open_document = Some(id);
-        } else if let Some(id) = clicked_image {
-            self.selected_image = Some(id);
+        // Visa lightbox om en bild är vald, annars återställ egui:s zoom-tangenter
+        if let Some(image_id) = self.selected_image {
+            self.show_lightbox(ui.ctx(), image_id, media_root);
+        } else {
+            ui.ctx().options_mut(|o| o.zoom_with_keyboard = true);
         }
 
-        // Lightbox för fullstorlek
-        if let Some(selected_id) = self.selected_image {
-            self.show_lightbox(ui.ctx(), selected_id, media_root);
-        }
-
-        // Kolla om lightbox satte en action
+        // Samla actions från lightbox
         if self.pending_profile_image.is_some() {
             action.set_profile_image = self.pending_profile_image.take();
         }
         if self.pending_delete.is_some() {
             action.delete_image = self.pending_delete.take();
+        }
+        if self.pending_open_document.is_some() {
+            action.open_document = self.pending_open_document.take();
         }
 
         action
@@ -186,6 +184,34 @@ impl ImageGallery {
 
     /// Visa lightbox med fullstorleksbild
     fn show_lightbox(&mut self, ctx: &egui::Context, image_id: i64, media_root: &Path) {
+        // Stäng av egui:s inbyggda CTRL+/- zoom så vi kan använda det själva
+        ctx.options_mut(|o| o.zoom_with_keyboard = false);
+
+        // Läs zoom-input INNAN fönstret (ctx-nivå, ej konsumerat av egui)
+        let scroll_zoom = ctx.input(|i| i.zoom_delta());
+        let key_zoom_in = ctx.input_mut(|i| {
+            i.consume_key(egui::Modifiers::COMMAND, egui::Key::Plus)
+                || i.consume_key(egui::Modifiers::COMMAND, egui::Key::Equals)
+        });
+        let key_zoom_out = ctx.input_mut(|i| {
+            i.consume_key(egui::Modifiers::COMMAND, egui::Key::Minus)
+        });
+        let key_zoom_reset = ctx.input_mut(|i| {
+            i.consume_key(egui::Modifiers::COMMAND, egui::Key::Num0)
+        });
+
+        // Applicera zoom
+        if key_zoom_reset {
+            self.zoom_level = 1.0;
+        } else {
+            let mut factor = scroll_zoom; // zoom_delta är multiplikativ (1.0 = ingen ändring)
+            if key_zoom_in { factor *= 1.25; }
+            if key_zoom_out { factor /= 1.25; }
+            if factor != 1.0 {
+                self.zoom_level = (self.zoom_level * factor).clamp(0.1, 10.0);
+            }
+        }
+
         // Hitta bilden och extrahera data
         let image_data = self.images.iter()
             .enumerate()
@@ -208,10 +234,6 @@ impl ImageGallery {
         let _ = self.get_or_load_full_texture(ctx, image_id, &image_path);
         let texture = self.full_textures.get(&image_id).cloned();
 
-        // Ladda EXIF-data om ej cachad
-        self.load_exif_data(image_id, &image_path);
-        let exif_data = self.exif_cache.get(&image_id).cloned().flatten();
-
         // Hämta prev/next IDs
         let prev_id = if current_index > 0 {
             self.images.get(current_index - 1).and_then(|i| i.id)
@@ -226,16 +248,32 @@ impl ImageGallery {
 
         let mut should_close = false;
         let mut new_selected: Option<i64> = None;
-        let mut set_as_profile = false;
-        let mut delete_image = false;
+        let mut open_in_viewer = false;
+
+        // Beräkna fönsterstorlek baserat på skärmstorlek
+        let screen = ctx.screen_rect();
+        let max_w = (screen.width() - 40.0).min(900.0);
+        let max_h = (screen.height() - 40.0).min(750.0);
 
         egui::Window::new("Bild")
             .collapsible(false)
             .resizable(true)
+            .default_size([max_w, max_h])
+            .max_size([max_w, max_h])
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
+                // === HEADER ===
                 ui.horizontal(|ui| {
                     ui.label(&filename);
+
+                    if (self.zoom_level - 1.0).abs() > 0.01 {
+                        ui.label(
+                            RichText::new(format!("{}%", (self.zoom_level * 100.0) as i32))
+                                .small()
+                                .color(Colors::TEXT_MUTED),
+                        );
+                    }
+
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("Stäng").clicked() {
                             should_close = true;
@@ -245,36 +283,28 @@ impl ImageGallery {
 
                 ui.separator();
 
-                // Visa bild i större storlek
+                // === BILDYTA ===
+                let image_height = (ui.available_height() - 36.0).max(100.0);
+
                 if let Some(tex) = texture {
-                    let max_size = egui::vec2(800.0, 600.0);
-                    ui.add(egui::Image::new(&tex).max_size(max_size));
+                    let image_area_width = ui.available_width();
+                    let tex_size = tex.size_vec2();
+                    let base_scale = (image_area_width / tex_size.x)
+                        .min(image_height / tex_size.y)
+                        .min(1.0);
+                    let display_size = tex_size * base_scale * self.zoom_level;
+
+                    egui::ScrollArea::both()
+                        .max_height(image_height)
+                        .show(ui, |ui| {
+                            ui.image((tex.id(), display_size));
+                        });
                 } else {
+                    ui.allocate_space(egui::vec2(0.0, image_height));
                     ui.label("Kunde inte ladda bild");
                 }
 
-                // EXIF-info (collapsible)
-                if exif_data.is_some() {
-                    ui.add_space(4.0);
-                    let exif_header = if self.show_exif_info {
-                        format!("{} Bildinfo \u{25bc}", Icons::CAMERA)
-                    } else {
-                        format!("{} Bildinfo \u{25b6}", Icons::CAMERA)
-                    };
-                    if ui.selectable_label(self.show_exif_info, exif_header).clicked() {
-                        self.show_exif_info = !self.show_exif_info;
-                    }
-
-                    if self.show_exif_info {
-                        if let Some(ref exif) = exif_data {
-                            Self::show_exif_panel(ui, exif);
-                        }
-                    }
-                }
-
-                ui.add_space(8.0);
-
-                // Navigation, profilbild-knapp och radera
+                // === FOOTER ===
                 ui.horizontal(|ui| {
                     ui.add_enabled_ui(prev_id.is_some(), |ui| {
                         if ui.button(format!("{} Föregående", Icons::ARROW_LEFT)).clicked() {
@@ -292,35 +322,22 @@ impl ImageGallery {
 
                     ui.separator();
 
-                    // Sätt som profilbild-knapp
-                    if ui.button(format!("{} Sätt som profilbild", Icons::PERSON)).clicked() {
-                        set_as_profile = true;
-                    }
-
-                    ui.separator();
-
-                    // Radera-knapp
-                    if ui.button(RichText::new(format!("{} Radera", Icons::DELETE)).color(Colors::ERROR)).clicked() {
-                        delete_image = true;
+                    if ui.button(format!("{} Visa detaljer", Icons::DOCUMENT)).clicked() {
+                        open_in_viewer = true;
                     }
                 });
             });
 
         if should_close {
             self.selected_image = None;
+            self.zoom_level = 1.0;
         } else if let Some(id) = new_selected {
             self.selected_image = Some(id);
+            self.zoom_level = 1.0;
         }
 
-        // Om användaren valde att sätta som profilbild
-        if set_as_profile {
-            self.pending_profile_image = Some(relative_path.clone());
-            self.selected_image = None;
-        }
-
-        // Om användaren vill radera
-        if delete_image {
-            self.pending_delete = Some((image_id, filename));
+        if open_in_viewer {
+            self.pending_open_document = Some(image_id);
             self.selected_image = None;
         }
     }

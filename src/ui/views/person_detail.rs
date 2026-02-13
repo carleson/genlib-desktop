@@ -309,7 +309,7 @@ impl PersonDetailView {
                     }
                 }
 
-                // Hantera dubbelklick → öppna dokumentvisaren
+                // Hantera klick → öppna dokumentvisaren
                 if let Some(doc_id) = action.open_document {
                     state.navigate_to_document(doc_id);
                 }
