@@ -104,6 +104,7 @@ fn migrate_from(conn: &Connection, from_version: i32) -> Result<()> {
             2 => migrate_v1_to_v2(conn)?,
             3 => migrate_v2_to_v3(conn)?,
             4 => migrate_v3_to_v4(conn)?,
+            5 => migrate_v4_to_v5(conn)?,
             _ => {}
         }
 
@@ -145,6 +146,48 @@ fn migrate_v3_to_v4(conn: &Connection) -> Result<()> {
 
     conn.execute_batch(
         "ALTER TABLE persons ADD COLUMN birth_place TEXT;"
+    )?;
+
+    Ok(())
+}
+
+/// Migration v4 -> v5: Ta bort category, priority, description, notes från checklisttabeller
+fn migrate_v4_to_v5(conn: &Connection) -> Result<()> {
+    info!("Migration v5: Förenklar checklisttabeller (tar bort category/priority)");
+
+    // Återskapa checklist_template_items utan category/priority/description
+    conn.execute_batch(
+        "CREATE TABLE checklist_template_items_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (template_id) REFERENCES checklist_templates(id) ON DELETE CASCADE
+        );
+        INSERT INTO checklist_template_items_new (id, template_id, title, sort_order)
+            SELECT id, template_id, title, sort_order FROM checklist_template_items;
+        DROP TABLE checklist_template_items;
+        ALTER TABLE checklist_template_items_new RENAME TO checklist_template_items;"
+    )?;
+
+    // Återskapa person_checklist_items utan category/priority/description/notes
+    conn.execute_batch(
+        "CREATE TABLE person_checklist_items_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_id INTEGER NOT NULL,
+            template_item_id INTEGER,
+            title TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_completed INTEGER NOT NULL DEFAULT 0,
+            completed_at TEXT,
+            FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
+            FOREIGN KEY (template_item_id) REFERENCES checklist_template_items(id) ON DELETE SET NULL
+        );
+        INSERT INTO person_checklist_items_new (id, person_id, template_item_id, title, sort_order, is_completed, completed_at)
+            SELECT id, person_id, template_item_id, title, sort_order, is_completed, completed_at FROM person_checklist_items;
+        DROP TABLE person_checklist_items;
+        ALTER TABLE person_checklist_items_new RENAME TO person_checklist_items;
+        CREATE INDEX IF NOT EXISTS idx_checklist_person ON person_checklist_items(person_id);"
     )?;
 
     Ok(())

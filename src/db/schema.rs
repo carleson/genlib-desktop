@@ -1,7 +1,7 @@
 /// SQL-schema för Genlib Desktop
 /// Kompatibelt med Django-export för migration
 
-pub const SCHEMA_VERSION: i32 = 4;
+pub const SCHEMA_VERSION: i32 = 5;
 
 pub const CREATE_TABLES: &str = r#"
 -- Systeminställningar (singleton, id=1)
@@ -95,9 +95,6 @@ CREATE TABLE IF NOT EXISTS checklist_template_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     template_id INTEGER NOT NULL,
     title TEXT NOT NULL,
-    description TEXT,
-    category INTEGER NOT NULL DEFAULT 0,
-    priority INTEGER NOT NULL DEFAULT 1,
     sort_order INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (template_id) REFERENCES checklist_templates(id) ON DELETE CASCADE
 );
@@ -108,13 +105,9 @@ CREATE TABLE IF NOT EXISTS person_checklist_items (
     person_id INTEGER NOT NULL,
     template_item_id INTEGER,
     title TEXT NOT NULL,
-    description TEXT,
-    category INTEGER NOT NULL DEFAULT 0,
-    priority INTEGER NOT NULL DEFAULT 1,
     sort_order INTEGER NOT NULL DEFAULT 0,
     is_completed INTEGER NOT NULL DEFAULT 0,
     completed_at TEXT,
-    notes TEXT,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
     FOREIGN KEY (template_item_id) REFERENCES checklist_template_items(id) ON DELETE SET NULL
 );

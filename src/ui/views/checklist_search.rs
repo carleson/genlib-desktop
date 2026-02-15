@@ -5,7 +5,7 @@ use egui::{self, RichText};
 
 use crate::db::checklist_repo::{ChecklistSearchFilter, ChecklistSearchResult};
 use crate::db::Database;
-use crate::models::ChecklistPriority;
+use crate::models::ChecklistTemplateItem;
 use crate::ui::{
     state::AppState,
     theme::{Colors, Icons},
@@ -21,6 +21,8 @@ pub struct ChecklistSearchView {
     needs_refresh: bool,
     show_completed: bool,
     show_advanced_filters: bool,
+    /// Fördefinierade uppgifter (för filterdropdown)
+    defined_tasks: Vec<ChecklistTemplateItem>,
 }
 
 impl ChecklistSearchView {
@@ -35,6 +37,7 @@ impl ChecklistSearchView {
             needs_refresh: true,
             show_completed: false,
             show_advanced_filters: false,
+            defined_tasks: Vec::new(),
         }
     }
 
@@ -78,32 +81,77 @@ impl ChecklistSearchView {
             {
                 changed = true;
             }
+        });
+
+        ui.add_space(4.0);
+
+        // Uppgiftsfilter + person-filter
+        ui.horizontal(|ui| {
+            // Uppgiftsfilter
+            ui.label("Uppgift:");
+            let selected_text = self
+                .filter
+                .task_title
+                .as_deref()
+                .unwrap_or("Alla");
+            egui::ComboBox::from_id_salt("task_filter")
+                .selected_text(selected_text)
+                .show_ui(ui, |ui| {
+                    if ui
+                        .selectable_label(self.filter.task_title.is_none(), "Alla")
+                        .clicked()
+                    {
+                        self.filter.task_title = None;
+                        changed = true;
+                    }
+                    for task in &self.defined_tasks {
+                        let is_selected = self.filter.task_title.as_deref() == Some(&task.title);
+                        if ui
+                            .selectable_label(is_selected, &task.title)
+                            .clicked()
+                        {
+                            self.filter.task_title = Some(task.title.clone());
+                            changed = true;
+                        }
+                    }
+                });
 
             ui.separator();
 
             // Levande/Avlidna
-            if ui.selectable_label(self.filter.filter_alive.is_none(), "Alla").clicked() {
+            if ui
+                .selectable_label(self.filter.filter_alive.is_none(), "Alla")
+                .clicked()
+            {
                 self.filter.filter_alive = None;
                 changed = true;
             }
-            if ui.selectable_label(self.filter.filter_alive == Some(true), "Levande").clicked() {
+            if ui
+                .selectable_label(self.filter.filter_alive == Some(true), "Levande")
+                .clicked()
+            {
                 self.filter.filter_alive = Some(true);
                 changed = true;
             }
-            if ui.selectable_label(self.filter.filter_alive == Some(false), "Avlidna").clicked() {
+            if ui
+                .selectable_label(self.filter.filter_alive == Some(false), "Avlidna")
+                .clicked()
+            {
                 self.filter.filter_alive = Some(false);
                 changed = true;
             }
 
             ui.separator();
 
-            // Toggle avancerade filter
             let advanced_label = if self.has_date_filters() {
                 format!("{} Filter aktiva", Icons::FILTER)
             } else {
                 format!("{} Fler filter", Icons::FILTER)
             };
-            if ui.selectable_label(self.show_advanced_filters, advanced_label).clicked() {
+            if ui
+                .selectable_label(self.show_advanced_filters, advanced_label)
+                .clicked()
+            {
                 self.show_advanced_filters = !self.show_advanced_filters;
             }
         });
@@ -118,19 +166,22 @@ impl ChecklistSearchView {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Datumfilter").strong());
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("Återställ").clicked() {
-                                self.filter.birth_after = None;
-                                self.filter.birth_before = None;
-                                self.filter.death_after = None;
-                                self.filter.death_before = None;
-                                self.birth_after_str.clear();
-                                self.birth_before_str.clear();
-                                self.death_after_str.clear();
-                                self.death_before_str.clear();
-                                changed = true;
-                            }
-                        });
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                if ui.small_button("Återställ").clicked() {
+                                    self.filter.birth_after = None;
+                                    self.filter.birth_before = None;
+                                    self.filter.death_after = None;
+                                    self.filter.death_before = None;
+                                    self.birth_after_str.clear();
+                                    self.birth_before_str.clear();
+                                    self.death_after_str.clear();
+                                    self.death_before_str.clear();
+                                    changed = true;
+                                }
+                            },
+                        );
                     });
 
                     ui.add_space(4.0);
@@ -138,22 +189,30 @@ impl ChecklistSearchView {
                     ui.horizontal(|ui| {
                         ui.label("Född:");
                         ui.label(RichText::new("från").small().color(Colors::TEXT_MUTED));
-                        if ui.add(
-                            egui::TextEdit::singleline(&mut self.birth_after_str)
-                                .hint_text("YYYY eller YYYY-MM-DD")
-                                .desired_width(120.0),
-                        ).changed() {
-                            self.filter.birth_after = Self::parse_date(&self.birth_after_str);
+                        if ui
+                            .add(
+                                egui::TextEdit::singleline(&mut self.birth_after_str)
+                                    .hint_text("YYYY eller YYYY-MM-DD")
+                                    .desired_width(120.0),
+                            )
+                            .changed()
+                        {
+                            self.filter.birth_after =
+                                Self::parse_date(&self.birth_after_str);
                             changed = true;
                         }
 
                         ui.label(RichText::new("till").small().color(Colors::TEXT_MUTED));
-                        if ui.add(
-                            egui::TextEdit::singleline(&mut self.birth_before_str)
-                                .hint_text("YYYY eller YYYY-MM-DD")
-                                .desired_width(120.0),
-                        ).changed() {
-                            self.filter.birth_before = Self::parse_date(&self.birth_before_str);
+                        if ui
+                            .add(
+                                egui::TextEdit::singleline(&mut self.birth_before_str)
+                                    .hint_text("YYYY eller YYYY-MM-DD")
+                                    .desired_width(120.0),
+                            )
+                            .changed()
+                        {
+                            self.filter.birth_before =
+                                Self::parse_date(&self.birth_before_str);
                             changed = true;
                         }
 
@@ -161,22 +220,30 @@ impl ChecklistSearchView {
 
                         ui.label("Död:");
                         ui.label(RichText::new("från").small().color(Colors::TEXT_MUTED));
-                        if ui.add(
-                            egui::TextEdit::singleline(&mut self.death_after_str)
-                                .hint_text("YYYY")
-                                .desired_width(80.0),
-                        ).changed() {
-                            self.filter.death_after = Self::parse_date(&self.death_after_str);
+                        if ui
+                            .add(
+                                egui::TextEdit::singleline(&mut self.death_after_str)
+                                    .hint_text("YYYY")
+                                    .desired_width(80.0),
+                            )
+                            .changed()
+                        {
+                            self.filter.death_after =
+                                Self::parse_date(&self.death_after_str);
                             changed = true;
                         }
 
                         ui.label(RichText::new("till").small().color(Colors::TEXT_MUTED));
-                        if ui.add(
-                            egui::TextEdit::singleline(&mut self.death_before_str)
-                                .hint_text("YYYY")
-                                .desired_width(80.0),
-                        ).changed() {
-                            self.filter.death_before = Self::parse_date(&self.death_before_str);
+                        if ui
+                            .add(
+                                egui::TextEdit::singleline(&mut self.death_before_str)
+                                    .hint_text("YYYY")
+                                    .desired_width(80.0),
+                            )
+                            .changed()
+                        {
+                            self.filter.death_before =
+                                Self::parse_date(&self.death_before_str);
                             changed = true;
                         }
                     });
@@ -191,7 +258,11 @@ impl ChecklistSearchView {
 
         // Statistik
         let total = self.results.len();
-        let completed = self.results.iter().filter(|r| r.item.is_completed).count();
+        let completed = self
+            .results
+            .iter()
+            .filter(|r| r.item.is_completed)
+            .count();
         let visible = if self.show_completed {
             total
         } else {
@@ -213,8 +284,7 @@ impl ChecklistSearchView {
             if self.results.is_empty() {
                 ui.add_space(16.0);
                 ui.label(
-                    RichText::new("Inga checklistobjekt hittades")
-                        .color(Colors::TEXT_MUTED),
+                    RichText::new("Inga uppgifter hittades").color(Colors::TEXT_MUTED),
                 );
                 return;
             }
@@ -235,7 +305,10 @@ impl ChecklistSearchView {
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(Icons::PERSON).strong());
-                        if ui.link(RichText::new(&result.person_name).strong()).clicked() {
+                        if ui
+                            .link(RichText::new(&result.person_name).strong())
+                            .clicked()
+                        {
                             state.navigate_to_person(result.item.person_id);
                         }
                     });
@@ -255,14 +328,6 @@ impl ChecklistSearchView {
                         }
                     }
 
-                    let prio_color = match result.item.priority {
-                        ChecklistPriority::Critical => Colors::ERROR,
-                        ChecklistPriority::High => Colors::WARNING,
-                        ChecklistPriority::Medium => Colors::INFO,
-                        ChecklistPriority::Low => Colors::TEXT_MUTED,
-                    };
-                    ui.label(RichText::new("●").small().color(prio_color));
-
                     let title_text = if result.item.is_completed {
                         RichText::new(&result.item.title)
                             .strikethrough()
@@ -271,12 +336,6 @@ impl ChecklistSearchView {
                         RichText::new(&result.item.title)
                     };
                     ui.label(title_text);
-
-                    ui.label(
-                        RichText::new(result.item.category.display_name())
-                            .small()
-                            .color(Colors::TEXT_SECONDARY),
-                    );
                 });
             }
         });
@@ -307,6 +366,10 @@ impl ChecklistSearchView {
             .checklists()
             .search_items_with_person(&self.filter)
             .unwrap_or_default();
+
+        // Ladda fördefinierade uppgifter för filterdropdown
+        self.defined_tasks = db.checklists().list_all_template_items().unwrap_or_default();
+
         self.needs_refresh = false;
     }
 

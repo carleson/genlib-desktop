@@ -189,18 +189,18 @@ impl SettingsView {
 
                     ui.add_space(16.0);
 
-                    // Checklistmallar
+                    // Uppgifter
                     egui::Frame::none()
                         .fill(ui.visuals().extreme_bg_color)
                         .rounding(8.0)
                         .inner_margin(16.0)
                         .show(ui, |ui| {
                             ui.set_min_width(ui.available_width());
-                            ui.label(RichText::new("Checklistor").strong());
+                            ui.label(RichText::new("Uppgifter").strong());
                             ui.add_space(8.0);
 
-                            ui.label("Hantera checklistmallar och applicera dem på personer.");
-                            if ui.button(format!("{} Mallar", Icons::CHECK)).clicked() {
+                            ui.label("Definiera uppgifter som kan tilldelas personer.");
+                            if ui.button(format!("{} Uppgifter", Icons::CHECK)).clicked() {
                                 state.navigate(View::ChecklistTemplates);
                             }
                         });
