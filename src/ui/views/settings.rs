@@ -108,11 +108,20 @@ impl SettingsView {
 
                             ui.label("Media-katalog:");
                             ui.horizontal(|ui| {
-                                let w = ui.available_width() - 60.0;
+                                let w = ui.available_width() - 100.0;
                                 ui.add(egui::TextEdit::singleline(&mut self.media_path).desired_width(w));
                                 if ui.button("Välj...").clicked() {
                                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
                                         self.media_path = path.display().to_string();
+                                    }
+                                }
+                                let media_dir = std::path::Path::new(&self.media_path);
+                                if media_dir.exists() {
+                                    if ui.small_button(Icons::FOLDER)
+                                        .on_hover_text("Öppna i filhanteraren")
+                                        .clicked()
+                                    {
+                                        open_in_file_explorer(media_dir);
                                     }
                                 }
                             });
@@ -120,11 +129,20 @@ impl SettingsView {
                             ui.add_space(4.0);
                             ui.label("Backup-katalog:");
                             ui.horizontal(|ui| {
-                                let w = ui.available_width() - 60.0;
+                                let w = ui.available_width() - 100.0;
                                 ui.add(egui::TextEdit::singleline(&mut self.backup_path).desired_width(w));
                                 if ui.button("Välj...").clicked() {
                                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
                                         self.backup_path = path.display().to_string();
+                                    }
+                                }
+                                let backup_dir = std::path::Path::new(&self.backup_path);
+                                if backup_dir.exists() {
+                                    if ui.small_button(Icons::FOLDER)
+                                        .on_hover_text("Öppna i filhanteraren")
+                                        .clicked()
+                                    {
+                                        open_in_file_explorer(backup_dir);
                                     }
                                 }
                             });
@@ -457,5 +475,26 @@ impl SettingsView {
                 self.status_message = Some(format!("Fel: {}", e));
             }
         }
+    }
+}
+
+fn open_in_file_explorer(path: &std::path::Path) {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg(path)
+            .spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer")
+            .arg(path)
+            .spawn();
     }
 }

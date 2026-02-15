@@ -187,7 +187,7 @@ impl PersonDetailView {
                 PersonDetailTab::PersonInfo => {
                     ui.columns(2, |columns| {
                         columns[0].vertical(|ui| {
-                            Self::show_person_info_static(ui, &person, self.profile_texture.as_ref());
+                            Self::show_person_info_static(ui, &person, self.profile_texture.as_ref(), db);
                         });
                         columns[1].vertical(|ui| {
                             Self::show_relations_static(ui, state, db, person_id);
@@ -324,7 +324,7 @@ impl PersonDetailView {
             });
     }
 
-    fn show_person_info_static(ui: &mut egui::Ui, person: &Person, profile_texture: Option<&TextureHandle>) {
+    fn show_person_info_static(ui: &mut egui::Ui, person: &Person, profile_texture: Option<&TextureHandle>, db: &Database) {
         egui::Frame::none()
             .fill(ui.visuals().extreme_bg_color)
             .rounding(8.0)
@@ -379,7 +379,22 @@ impl PersonDetailView {
                                 }
 
                                 ui.label(RichText::new("Katalog:").color(Colors::TEXT_SECONDARY));
-                                ui.label(&person.directory_name);
+                                ui.horizontal(|ui| {
+                                    ui.label(&person.directory_name);
+                                    let person_dir_path = db
+                                        .config()
+                                        .get()
+                                        .map(|c| c.media_directory_path.join("persons").join(&person.directory_name))
+                                        .unwrap_or_default();
+                                    if person_dir_path.exists() {
+                                        if ui.small_button(Icons::FOLDER)
+                                            .on_hover_text("Öppna i filhanteraren")
+                                            .clicked()
+                                        {
+                                            open_in_file_explorer(&person_dir_path);
+                                        }
+                                    }
+                                });
                                 ui.end_row();
                             });
                     });
@@ -684,5 +699,26 @@ fn import_images_to_person(
         Ok(imported)
     } else {
         Err("Inga bilder kunde importeras".to_string())
+    }
+}
+
+fn open_in_file_explorer(path: &Path) {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg(path)
+            .spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer")
+            .arg(path)
+            .spawn();
     }
 }
