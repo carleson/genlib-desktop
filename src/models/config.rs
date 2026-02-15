@@ -26,9 +26,9 @@ impl DirNameFormat {
 
     pub fn example(&self) -> &'static str {
         match self {
-            Self::FirstnameFirst => "gosta_anders_svensson_1921-12-07",
-            Self::SurnameFirst => "svensson_gosta_anders_1921-12-07",
-            Self::DateFirst => "1921-12-07_gosta_anders_svensson",
+            Self::FirstnameFirst => "svensson/gosta_anders_svensson_1921_12_07",
+            Self::SurnameFirst => "svensson/svensson_gosta_anders_1921_12_07",
+            Self::DateFirst => "svensson/1921_12_07_gosta_anders_svensson",
         }
     }
 

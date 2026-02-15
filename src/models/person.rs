@@ -116,7 +116,9 @@ impl Person {
         Ok(())
     }
 
-    /// Generera ett katalognamn baserat på namn, födelsedatum och format
+    /// Generera ett katalognamn baserat på namn, födelsedatum och format.
+    /// Returnerar en sökväg med efternamnsprefix, t.ex. `andersson/johan_andersson_1921_12_07`.
+    /// Personer utan efternamn grupperas under `_ovrigt`.
     pub fn generate_directory_name(
         firstname: &Option<String>,
         surname: &Option<String>,
@@ -145,7 +147,16 @@ impl Person {
             parts.join("_")
         };
 
-        Self::sanitize_directory_name(&raw)
+        let dir_name = Self::sanitize_directory_name(&raw);
+
+        // Gruppera under efternamnsprefix
+        let prefix = if s.is_empty() {
+            "_ovrigt".to_string()
+        } else {
+            Self::sanitize_directory_name(s)
+        };
+
+        format!("{}/{}", prefix, dir_name)
     }
 
     /// Sanitera ett katalognamn (lowercase, ersätt svenska tecken, etc.)
@@ -212,7 +223,7 @@ mod tests {
     fn test_generate_directory_name() {
         use crate::models::DirNameFormat;
 
-        // FirstnameFirst (default)
+        // FirstnameFirst (default) — grupperat under efternamn
         assert_eq!(
             Person::generate_directory_name(
                 &Some("Johan".into()),
@@ -220,8 +231,10 @@ mod tests {
                 &Some("1921-12-07".into()),
                 DirNameFormat::FirstnameFirst,
             ),
-            "johan_akerstrom_1921_12_07"
+            "akerstrom/johan_akerstrom_1921_12_07"
         );
+
+        // Utan efternamn — grupperas under _ovrigt
         assert_eq!(
             Person::generate_directory_name(
                 &Some("Märta".into()),
@@ -229,7 +242,7 @@ mod tests {
                 &None,
                 DirNameFormat::FirstnameFirst,
             ),
-            "marta"
+            "_ovrigt/marta"
         );
 
         // SurnameFirst
@@ -240,7 +253,7 @@ mod tests {
                 &Some("1921-12-07".into()),
                 DirNameFormat::SurnameFirst,
             ),
-            "akerstrom_johan_1921_12_07"
+            "akerstrom/akerstrom_johan_1921_12_07"
         );
 
         // DateFirst
@@ -251,7 +264,7 @@ mod tests {
                 &Some("1921-12-07".into()),
                 DirNameFormat::DateFirst,
             ),
-            "1921_12_07_johan_akerstrom"
+            "akerstrom/1921_12_07_johan_akerstrom"
         );
     }
 

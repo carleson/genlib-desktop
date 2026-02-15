@@ -424,12 +424,12 @@ mod tests {
         // SurnameFirst
         assert_eq!(
             indi.generate_directory_name(DirNameFormat::SurnameFirst),
-            "andersson_johan_1850_01_01"
+            "andersson/andersson_johan_1850_01_01"
         );
         // FirstnameFirst
         assert_eq!(
             indi.generate_directory_name(DirNameFormat::FirstnameFirst),
-            "johan_andersson_1850_01_01"
+            "andersson/johan_andersson_1850_01_01"
         );
     }
 }
