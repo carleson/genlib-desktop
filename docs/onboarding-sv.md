@@ -5,23 +5,23 @@ En kort, praktisk guide för dig som vill börja registrera din släkt direkt.
 ![PLACEHOLDER: Startskärmen med översikt och snabbknappar](images/placeholder-startskarm.png)
 
 ## För vem?
-Genlib Desktop är byggt för släktforskare som vill samla personer, relationer, dokument och bilder på ett säkert, lokalt och strukturerat sätt – utan att behöva en server eller molntjänst.
+Genlib Desktop är byggt för släktforskare som vill samla personer, relationer, dokument och bilder på ett säkert, lokalt och strukturerat sätt utan att behöva en server eller molntjänst.
 
 ## Vad löser programmet?
 - Samlar allt material om din släkt på ett ställe
 - Skapar ordning i dokument, foton och anteckningar
 - Gör det lätt att se relationer och familjeträd
 - Säkerhetskopierar enkelt, så att inget går förlorat
-- Gör dina filer lättåtkomliga i filsystemet – enkla att arkivera och dela även med personer utan släktforskningsprogram
+- Gör dina filer lättåtkomliga i filsystemet, så att de blir enkla att arkivera och dela även med personer utan släktforskningsprogram
 
 ## Hur skiljer det sig från traditionella släktforskningsprogram?
-Genlib Desktop är ett **komplement** till traditionella släktforskningsprogram och fungerar som ett **skal ovanpå dina egna filer**. Dina dokument och bilder sparas i en tydlig katalogstruktur i filsystemet, inte i ett låst format. Det betyder att du:
+Genlib Desktop är ett **komplement** till traditionella släktforskningsprogram och fungerar som ett **skal ovanpå dina egna filer**. Dina dokument och bilder sparas i en tydlig katalogstruktur i filsystemet, inte i ett låst format. Det innebär att du:
 
 - kan arkivera och distribuera materialet utan specialprogram
 - behåller en enhetlig lagringsstrategi över tid
 - slipper bli låst till ett visst verktyg eller leverantör
 
-## 5 minuter till din första släktdatabas
+## Fem minuter till din första släktdatabas
 
 ### 1) Starta Genlib Desktop
 Vid första start får du en enkel guide som hjälper dig välja mappar.
@@ -71,7 +71,7 @@ Gå till **Familjeträd** för att visualisera relationer. Du kan zooma, panorer
 - Använd **bokmärken** för viktiga personer
 
 ## Säkerhetskopiera regelbundet
-Under **Inställningar → Backup/Restore** kan du skapa en ZIP-backup med ett klick.
+Under **Inställningar → Backup/Restore** kan du skapa en ZIP‑backup med ett klick.
 
 ![PLACEHOLDER: Backup/Restore-vy](images/placeholder-backup.png)
 
