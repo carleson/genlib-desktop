@@ -12,14 +12,14 @@ Genlib Desktop is built for genealogists who want to collect people, relationshi
 - Organizes documents, photos, and notes
 - Makes it easy to see relationships and family trees
 - Simple backups so nothing gets lost
-- Keeps your files accessible in the file system—easy to archive and share even with people without genealogy software
+- Keeps your files accessible in the filesystem—easy to archive and share even with people without genealogy software
 
 ## How is it different from traditional genealogy programs?
-Genlib Desktop is a **complement** to traditional genealogy software and works as a **shell over your own files**. Your documents and images are stored in a clear folder structure in the file system, not in a locked format. That means you:
+Genlib Desktop is a **complement** to traditional genealogy software and works as a **shell over your own files**. Your documents and images are stored in a clear folder structure in the filesystem, not in a locked format. That means you:
 
 - can archive and distribute your material without special software
 - keep a consistent storage strategy over time
-- avoid being locked in to a single tool or vendor
+- avoid being locked into a single tool or vendor
 
 ## 5 minutes to your first family database
 

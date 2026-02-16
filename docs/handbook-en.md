@@ -13,10 +13,10 @@ Genlib Desktop is a local desktop application for genealogy. The focus is on str
 - **Overview:** Family trees and statistics provide context
 - **Safety:** Simple backup and restore
 - **Control:** All data stays local—you own it
-- **Open structure:** Files are easy to access in the file system and simple to archive and share
+- **Open structure:** Files are easy to access in the filesystem and simple to archive and share
 
 ## 1.1 Difference from traditional genealogy programs
-Many traditional programs lock data into proprietary formats or databases that require the same program to open fully. Genlib Desktop is a **complement** that works as a **shell over your own files**—you get a consistent storage strategy where images, PDFs, and notes live in a clear folder structure in the file system.
+Many traditional programs lock data into proprietary formats or databases that require the same program to open fully. Genlib Desktop is a **complement** that works as a **shell over your own files**—you get a consistent storage strategy where images, PDFs, and notes live in a clear folder structure in the filesystem.
 
 This means you can:
 - archive and distribute material to people without genealogy software
@@ -151,11 +151,11 @@ Default database locations:
 
 ## 14. Troubleshooting and FAQ
 
-### The program won’t start
+### The program won't start
 - Check that you have write permissions for your selected folders
 - Reinstall or rebuild the project
 
-### I can’t find my files
+### I can't find my files
 - Check which media folder you selected in Settings
 
 ### Backups are missing
