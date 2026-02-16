@@ -184,6 +184,8 @@ pub enum ShortcutAction {
     Backup,
     CloseModal,
     ToggleDarkMode,
+    HistoryBack,
+    HistoryForward,
 }
 
 impl ShortcutAction {
@@ -198,6 +200,8 @@ impl ShortcutAction {
         Self::Backup,
         Self::CloseModal,
         Self::ToggleDarkMode,
+        Self::HistoryBack,
+        Self::HistoryForward,
     ];
 
     pub fn label(&self) -> &'static str {
@@ -212,6 +216,8 @@ impl ShortcutAction {
             Self::Backup => "Backup",
             Self::CloseModal => "Stäng dialog",
             Self::ToggleDarkMode => "Mörkt/ljust läge",
+            Self::HistoryBack => "Föregående person",
+            Self::HistoryForward => "Nästa person",
         }
     }
 
@@ -227,6 +233,8 @@ impl ShortcutAction {
             Self::Backup => "backup",
             Self::CloseModal => "close_modal",
             Self::ToggleDarkMode => "toggle_dark_mode",
+            Self::HistoryBack => "history_back",
+            Self::HistoryForward => "history_forward",
         }
     }
 
@@ -242,6 +250,8 @@ impl ShortcutAction {
             "backup" => Some(Self::Backup),
             "close_modal" => Some(Self::CloseModal),
             "toggle_dark_mode" => Some(Self::ToggleDarkMode),
+            "history_back" => Some(Self::HistoryBack),
+            "history_forward" => Some(Self::HistoryForward),
             _ => None,
         }
     }
@@ -356,6 +366,8 @@ pub fn default_shortcuts() -> ShortcutMap {
     m.insert(ShortcutAction::Backup, KeyboardShortcut::new(egui::Key::B, true, false, false));
     m.insert(ShortcutAction::CloseModal, KeyboardShortcut::new(egui::Key::Escape, false, false, false));
     m.insert(ShortcutAction::ToggleDarkMode, KeyboardShortcut::new(egui::Key::D, true, false, false));
+    m.insert(ShortcutAction::HistoryBack, KeyboardShortcut::new(egui::Key::ArrowLeft, false, false, true));
+    m.insert(ShortcutAction::HistoryForward, KeyboardShortcut::new(egui::Key::ArrowRight, false, false, true));
     m
 }
 

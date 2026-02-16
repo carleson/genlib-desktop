@@ -79,6 +79,13 @@ pub struct AppState {
 
     /// Fångar ny genväg i inställningar (blockerar global genvägshantering)
     pub capturing_shortcut: bool,
+
+    /// Historik av besökta personer (för bakåt/framåt-navigering)
+    pub person_history: Vec<i64>,
+    /// Pekare till nuvarande position i historiken
+    pub person_history_cursor: usize,
+    /// Flagga: pågående historiknavigering (undvik push)
+    pub navigating_history: bool,
 }
 
 impl AppState {
@@ -93,8 +100,50 @@ impl AppState {
 
     /// Navigera till persondetalj
     pub fn navigate_to_person(&mut self, person_id: i64) {
+        if !self.navigating_history {
+            // Trunkera allt efter cursor (som webbläsare)
+            if !self.person_history.is_empty() {
+                self.person_history.truncate(self.person_history_cursor + 1);
+            }
+            self.person_history.push(person_id);
+            self.person_history_cursor = self.person_history.len() - 1;
+        }
+        self.navigating_history = false;
         self.selected_person_id = Some(person_id);
         self.current_view = View::PersonDetail;
+    }
+
+    /// Kan vi navigera bakåt i personhistoriken?
+    pub fn can_go_back(&self) -> bool {
+        self.person_history_cursor > 0 && !self.person_history.is_empty()
+    }
+
+    /// Kan vi navigera framåt i personhistoriken?
+    pub fn can_go_forward(&self) -> bool {
+        !self.person_history.is_empty()
+            && self.person_history_cursor < self.person_history.len() - 1
+    }
+
+    /// Navigera bakåt i personhistoriken
+    pub fn history_back(&mut self) -> Option<i64> {
+        if self.can_go_back() {
+            self.person_history_cursor -= 1;
+            self.navigating_history = true;
+            Some(self.person_history[self.person_history_cursor])
+        } else {
+            None
+        }
+    }
+
+    /// Navigera framåt i personhistoriken
+    pub fn history_forward(&mut self) -> Option<i64> {
+        if self.can_go_forward() {
+            self.person_history_cursor += 1;
+            self.navigating_history = true;
+            Some(self.person_history[self.person_history_cursor])
+        } else {
+            None
+        }
     }
 
     /// Navigera till dokumentvy

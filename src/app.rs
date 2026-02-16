@@ -225,6 +225,18 @@ impl GenlibApp {
                 self.state.dark_mode = !self.state.dark_mode;
                 configure_style(ctx, self.state.dark_mode);
             }
+            ShortcutAction::HistoryBack => {
+                if let Some(person_id) = self.state.history_back() {
+                    self.state.navigate_to_person(person_id);
+                    self.person_detail.mark_needs_refresh();
+                }
+            }
+            ShortcutAction::HistoryForward => {
+                if let Some(person_id) = self.state.history_forward() {
+                    self.state.navigate_to_person(person_id);
+                    self.person_detail.mark_needs_refresh();
+                }
+            }
         }
     }
 }
@@ -352,7 +364,7 @@ impl eframe::App for GenlibApp {
                 }
                 View::PersonList => {
                     if self.person_list.show(ui, &mut self.state, &self.db) {
-                        self.state.current_view = View::PersonDetail;
+                        // navigate_to_person() redan anropad i person_list — sätter current_view
                         self.person_detail.mark_needs_refresh();
                     }
                 }

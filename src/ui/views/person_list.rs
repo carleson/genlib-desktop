@@ -395,7 +395,7 @@ impl PersonListView {
                     // Gör hela raden klickbar
                     if response.response.interact(egui::Sense::click()).clicked() {
                         if let Some(id) = person.id {
-                            state.selected_person_id = Some(id);
+                            state.navigate_to_person(id);
                             person_selected = true;
                         }
                     }
