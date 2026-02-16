@@ -5,10 +5,10 @@ Eine kurze, praktische Anleitung, um sofort mit der Erfassung Ihrer Familie zu b
 ![PLACEHOLDER: Startbildschirm mit Übersicht und Schnellaktionen](images/placeholder-startskarm.png)
 
 ## Für wen?
-Genlib Desktop ist für Genealogen entwickelt, die Personen, Beziehungen, Dokumente und Fotos sicher, lokal und strukturiert sammeln möchten – ohne Server oder Cloud.
+Genlib Desktop ist für Genealoginnen und Genealogen entwickelt, die Personen, Beziehungen, Dokumente und Fotos sicher, lokal und strukturiert sammeln möchten – ohne Server oder Cloud.
 
 ## Was löst das Programm?
-- Führt alle Familienrecherchen an einem Ort zusammen
+- Führt Ihre Familienforschung an einem Ort zusammen
 - Bringt Ordnung in Dokumente, Fotos und Notizen
 - Macht Beziehungen und Stammbäume leicht sichtbar
 - Einfache Backups, damit nichts verloren geht

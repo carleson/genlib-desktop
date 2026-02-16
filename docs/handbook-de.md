@@ -1,6 +1,6 @@
 # Genlib Desktop – Handbuch
 
-Ein vollständiges Handbuch für Genealogen, die den maximalen Nutzen aus Genlib Desktop ziehen möchten.
+Ein vollständiges Handbuch für Genealoginnen und Genealogen, die den maximalen Nutzen aus Genlib Desktop ziehen möchten.
 
 ![PLACEHOLDER: Anwendungsübersicht](images/placeholder-oversikt.png)
 
