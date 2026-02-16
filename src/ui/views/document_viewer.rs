@@ -33,10 +33,6 @@ pub struct DocumentViewerView {
     error_message: Option<String>,
     /// Behöver laddas om
     needs_refresh: bool,
-    /// Redigerar metadata
-    editing_metadata: bool,
-    /// Metadata som redigeras
-    edit_tags: String,
     /// Visa bild i lightbox (helskärm)
     show_image_lightbox: bool,
     /// Zoom-nivå för bildvisning
@@ -55,8 +51,6 @@ impl DocumentViewerView {
             image_texture: None,
             error_message: None,
             needs_refresh: true,
-            editing_metadata: false,
-            edit_tags: String::new(),
             show_image_lightbox: false,
             zoom_level: 1.0,
         }
@@ -81,7 +75,6 @@ impl DocumentViewerView {
                 // Ladda innehåll baserat på typ
                 self.load_content(&doc, db);
 
-                self.edit_tags = doc.tags.clone().unwrap_or_default();
                 self.document = Some(doc);
                 self.error_message = None;
             }
@@ -325,38 +318,7 @@ impl DocumentViewerView {
 
                 ui.add_space(16.0);
 
-                // Taggar
-                ui.label(RichText::new("Taggar:").color(Colors::TEXT_SECONDARY));
-                if self.editing_metadata {
-                    ui.text_edit_singleline(&mut self.edit_tags);
-                } else {
-                    let tags_display = doc.tags.as_deref().unwrap_or("(inga taggar)");
-                    ui.label(tags_display);
-                }
-
-                ui.add_space(16.0);
-
                 // Åtgärdsknappar
-                ui.horizontal(|ui| {
-                    if self.editing_metadata {
-                        if ui.button(format!("{} Spara", Icons::SAVE)).clicked() {
-                            self.save_metadata(db);
-                        }
-                        if ui.button("Avbryt").clicked() {
-                            self.editing_metadata = false;
-                            if let Some(ref doc) = self.document {
-                                self.edit_tags = doc.tags.clone().unwrap_or_default();
-                            }
-                        }
-                    } else {
-                        if ui.button(format!("{} Redigera", Icons::EDIT)).clicked() {
-                            self.editing_metadata = true;
-                        }
-                    }
-                });
-
-                ui.add_space(8.0);
-
                 ui.horizontal(|ui| {
                     if doc.is_image() {
                         if ui.button(format!("{} Visa bild", Icons::IMAGE)).clicked() {
@@ -543,24 +505,6 @@ impl DocumentViewerView {
             ui.add_space(8.0);
             ui.label("Klicka på 'Öppna extern' för att visa i PDF-läsare.");
         });
-    }
-
-    fn save_metadata(&mut self, db: &Database) {
-        if let Some(ref mut doc) = self.document {
-            let tags = if self.edit_tags.trim().is_empty() {
-                None
-            } else {
-                Some(self.edit_tags.clone())
-            };
-
-            doc.tags = tags;
-
-            if let Err(e) = db.documents().update(doc) {
-                self.error_message = Some(format!("Kunde inte spara: {}", e));
-            } else {
-                self.editing_metadata = false;
-            }
-        }
     }
 
     fn save_text_content(&mut self, db: &Database) {

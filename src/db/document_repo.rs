@@ -127,7 +127,7 @@ impl DocumentRepository {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, person_id, document_type_id, filename, relative_path,
-                    file_size, file_type, tags, file_modified_at, created_at, updated_at
+                    file_size, file_type, file_modified_at, created_at, updated_at
              FROM documents
              WHERE person_id = ?
              ORDER BY document_type_id, filename"
@@ -147,7 +147,7 @@ impl DocumentRepository {
         let result = conn
             .query_row(
                 "SELECT id, person_id, document_type_id, filename, relative_path,
-                        file_size, file_type, tags, file_modified_at, created_at, updated_at
+                        file_size, file_type, file_modified_at, created_at, updated_at
                  FROM documents WHERE id = ?",
                 [id],
                 |row| Ok(Self::row_to_document(row)),
@@ -163,7 +163,7 @@ impl DocumentRepository {
         let result = conn
             .query_row(
                 "SELECT id, person_id, document_type_id, filename, relative_path,
-                        file_size, file_type, tags, file_modified_at, created_at, updated_at
+                        file_size, file_type, file_modified_at, created_at, updated_at
                  FROM documents WHERE person_id = ? AND relative_path = ?",
                 params![person_id, relative_path],
                 |row| Ok(Self::row_to_document(row)),
@@ -178,8 +178,8 @@ impl DocumentRepository {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO documents (person_id, document_type_id, filename, relative_path,
-                                    file_size, file_type, tags, file_modified_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                                    file_size, file_type, file_modified_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 doc.person_id,
                 doc.document_type_id,
@@ -187,7 +187,6 @@ impl DocumentRepository {
                 doc.relative_path,
                 doc.file_size,
                 doc.file_type,
-                doc.tags,
                 doc.file_modified_at.map(|d| d.to_string()),
             ],
         )?;
@@ -206,16 +205,15 @@ impl DocumentRepository {
         conn.execute(
             "UPDATE documents SET
                 document_type_id = ?1, filename = ?2, relative_path = ?3,
-                file_size = ?4, file_type = ?5, tags = ?6, file_modified_at = ?7,
+                file_size = ?4, file_type = ?5, file_modified_at = ?6,
                 updated_at = datetime('now')
-             WHERE id = ?8",
+             WHERE id = ?7",
             params![
                 doc.document_type_id,
                 doc.filename,
                 doc.relative_path,
                 doc.file_size,
                 doc.file_type,
-                doc.tags,
                 doc.file_modified_at.map(|d| d.to_string()),
                 id,
             ],
@@ -272,7 +270,7 @@ impl DocumentRepository {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT d.id, d.person_id, d.document_type_id, d.filename, d.relative_path,
-                    d.file_size, d.file_type, d.tags, d.file_modified_at, d.created_at, d.updated_at,
+                    d.file_size, d.file_type, d.file_modified_at, d.created_at, d.updated_at,
                     COALESCE(p.firstname || ' ', '') || COALESCE(p.surname, '')
              FROM documents d
              LEFT JOIN persons p ON d.person_id = p.id
@@ -283,7 +281,7 @@ impl DocumentRepository {
         let results = stmt
             .query_map([limit as i64], |row| {
                 let doc = Self::row_to_document(row);
-                let person_name: Option<String> = row.get(11).ok();
+                let person_name: Option<String> = row.get(10).ok();
                 Ok((doc, person_name))
             })?
             .filter_map(|r| r.ok())
@@ -346,14 +344,13 @@ impl DocumentRepository {
             relative_path: row.get(4).unwrap_or_default(),
             file_size: row.get(5).unwrap_or(0),
             file_type: row.get(6).ok(),
-            tags: row.get(7).ok(),
             file_modified_at: row
-                .get::<_, Option<String>>(8)
+                .get::<_, Option<String>>(7)
                 .ok()
                 .flatten()
                 .and_then(|s| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S").ok()),
-            created_at: row.get(9).ok(),
-            updated_at: row.get(10).ok(),
+            created_at: row.get(8).ok(),
+            updated_at: row.get(9).ok(),
         }
     }
 }

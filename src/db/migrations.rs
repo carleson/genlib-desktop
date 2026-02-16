@@ -105,6 +105,7 @@ fn migrate_from(conn: &Connection, from_version: i32) -> Result<()> {
             3 => migrate_v2_to_v3(conn)?,
             4 => migrate_v3_to_v4(conn)?,
             5 => migrate_v4_to_v5(conn)?,
+            6 => migrate_v5_to_v6(conn)?,
             _ => {}
         }
 
@@ -189,6 +190,15 @@ fn migrate_v4_to_v5(conn: &Connection) -> Result<()> {
         ALTER TABLE person_checklist_items_new RENAME TO person_checklist_items;
         CREATE INDEX IF NOT EXISTS idx_checklist_person ON person_checklist_items(person_id);"
     )?;
+
+    Ok(())
+}
+
+/// Migration v5 -> v6: Ta bort tags från documents
+fn migrate_v5_to_v6(conn: &Connection) -> Result<()> {
+    info!("Migration v6: Tar bort tags-kolumnen från documents");
+
+    conn.execute_batch("ALTER TABLE documents DROP COLUMN tags;")?;
 
     Ok(())
 }

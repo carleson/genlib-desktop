@@ -225,7 +225,6 @@ impl<'a> DocumentSyncService<'a> {
             relative_path: relative_path.to_string(),
             file_size,
             file_type,
-            tags: None,
             file_modified_at: file_modified,
             created_at: None,
             updated_at: None,

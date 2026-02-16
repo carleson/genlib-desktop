@@ -32,7 +32,6 @@ pub struct Document {
     pub relative_path: String,
     pub file_size: i64,
     pub file_type: Option<String>,
-    pub tags: Option<String>,
     pub file_modified_at: Option<NaiveDateTime>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -53,25 +52,9 @@ impl Document {
             relative_path,
             file_size: 0,
             file_type,
-            tags: None,
             file_modified_at: None,
             created_at: None,
             updated_at: None,
-        }
-    }
-
-    pub fn get_tags_list(&self) -> Vec<&str> {
-        self.tags
-            .as_ref()
-            .map(|t| t.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect())
-            .unwrap_or_default()
-    }
-
-    pub fn set_tags(&mut self, tags: Vec<String>) {
-        if tags.is_empty() {
-            self.tags = None;
-        } else {
-            self.tags = Some(tags.join(", "));
         }
     }
 
@@ -147,14 +130,4 @@ mod tests {
         assert!(doc3.is_pdf());
     }
 
-    #[test]
-    fn test_tags() {
-        let mut doc = Document::new(1, "test.pdf".into(), "test.pdf".into());
-
-        doc.set_tags(vec!["viktigt".into(), "arkiv".into()]);
-        assert_eq!(doc.tags, Some("viktigt, arkiv".to_string()));
-
-        let tags = doc.get_tags_list();
-        assert_eq!(tags, vec!["viktigt", "arkiv"]);
-    }
 }

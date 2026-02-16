@@ -1,7 +1,7 @@
 /// SQL-schema för Genlib Desktop
 /// Kompatibelt med Django-export för migration
 
-pub const SCHEMA_VERSION: i32 = 5;
+pub const SCHEMA_VERSION: i32 = 6;
 
 pub const CREATE_TABLES: &str = r#"
 -- Systeminställningar (singleton, id=1)
@@ -71,7 +71,6 @@ CREATE TABLE IF NOT EXISTS documents (
     relative_path TEXT NOT NULL,
     file_size INTEGER NOT NULL DEFAULT 0,
     file_type TEXT,
-    tags TEXT,
     file_modified_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
