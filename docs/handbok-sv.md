@@ -16,7 +16,7 @@ Genlib Desktop är en lokal desktop‑applikation för släktforskning. Fokus li
  - **Öppen struktur:** Filerna ligger lättåtkomliga i filsystemet och är enkla att arkivera och dela
 
 ## 1.1 Skillnaden mot traditionella släktforskningsprogram
-Många traditionella program låser in data i egna format eller databaser som kräver samma program för att kunna öppnas fullt ut. Genlib Desktop fungerar istället som ett **skal ovanpå dina egna filer** – du får en enhetlig lagringsstrategi där bilder, PDF:er och anteckningar ligger i en tydlig katalogstruktur i filsystemet.
+Många traditionella program låser in data i egna format eller databaser som kräver samma program för att kunna öppnas fullt ut. Genlib Desktop är ett **komplement** som fungerar som ett **skal ovanpå dina egna filer** – du får en enhetlig lagringsstrategi där bilder, PDF:er och anteckningar ligger i en tydlig katalogstruktur i filsystemet.
 
 Det innebär att du kan:
 - arkivera och distribuera material till personer utan släktforskningsprogram
