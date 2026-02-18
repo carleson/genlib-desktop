@@ -8,7 +8,7 @@ use egui::{self, ColorImage, RichText, TextureHandle, TextureOptions};
 use crate::db::Database;
 use crate::models::Document;
 use crate::ui::theme::{Colors, Icons};
-use crate::utils::exif::ExifData;
+
 
 /// Actions som galleriet returnerar till callern
 #[derive(Default)]
@@ -27,14 +27,10 @@ pub struct ImageGallery {
     thumbnails: HashMap<i64, TextureHandle>,
     /// Cachade fullstora texturer för lightbox (document_id -> texture)
     full_textures: HashMap<i64, TextureHandle>,
-    /// Cachade EXIF-data (document_id -> exif data)
-    exif_cache: HashMap<i64, Option<ExifData>>,
     /// Lista med bilder
     images: Vec<Document>,
     /// Vald bild för fullstorlek
     selected_image: Option<i64>,
-    /// Visa EXIF-info i lightbox
-    show_exif_info: bool,
     /// Behöver refresh
     needs_refresh: bool,
     /// Person ID
@@ -65,10 +61,8 @@ impl ImageGallery {
         Self {
             thumbnails: HashMap::new(),
             full_textures: HashMap::new(),
-            exif_cache: HashMap::new(),
             images: Vec::new(),
             selected_image: None,
-            show_exif_info: false,
             needs_refresh: true,
             person_id: None,
             person_dir: None,
@@ -325,6 +319,7 @@ impl ImageGallery {
                     if ui.button(format!("{} Visa detaljer", Icons::DOCUMENT)).clicked() {
                         open_in_viewer = true;
                     }
+
                 });
             });
 
@@ -340,71 +335,6 @@ impl ImageGallery {
             self.pending_open_document = Some(image_id);
             self.selected_image = None;
         }
-    }
-
-    fn show_exif_panel(ui: &mut egui::Ui, exif: &ExifData) {
-        egui::Frame::none()
-            .fill(ui.visuals().faint_bg_color)
-            .rounding(4.0)
-            .inner_margin(8.0)
-            .show(ui, |ui| {
-                egui::Grid::new("exif_grid")
-                    .num_columns(2)
-                    .spacing([16.0, 4.0])
-                    .show(ui, |ui| {
-                        if let Some(dt) = exif.date_taken {
-                            ui.label(RichText::new("Datum:").color(Colors::TEXT_SECONDARY));
-                            ui.label(dt.format("%Y-%m-%d %H:%M").to_string());
-                            ui.end_row();
-                        }
-
-                        if let Some(cam) = exif.camera_info() {
-                            ui.label(RichText::new("Kamera:").color(Colors::TEXT_SECONDARY));
-                            ui.label(cam);
-                            ui.end_row();
-                        }
-
-                        if let Some(exp) = exif.exposure_info() {
-                            ui.label(RichText::new("Exponering:").color(Colors::TEXT_SECONDARY));
-                            ui.label(exp);
-                            ui.end_row();
-                        }
-
-                        if let Some(dim) = exif.dimensions_string() {
-                            ui.label(RichText::new("Storlek:").color(Colors::TEXT_SECONDARY));
-                            ui.label(format!("{} px", dim));
-                            ui.end_row();
-                        }
-
-                        if let Some(gps) = exif.gps_string() {
-                            ui.label(RichText::new(format!("{} GPS:", Icons::LOCATION)).color(Colors::TEXT_SECONDARY));
-                            ui.label(gps);
-                            ui.end_row();
-                        }
-
-                        if let Some(ref artist) = exif.artist {
-                            ui.label(RichText::new("Fotograf:").color(Colors::TEXT_SECONDARY));
-                            ui.label(artist);
-                            ui.end_row();
-                        }
-
-                        if let Some(ref copyright) = exif.copyright {
-                            ui.label(RichText::new("Copyright:").color(Colors::TEXT_SECONDARY));
-                            ui.label(copyright);
-                            ui.end_row();
-                        }
-                    });
-            });
-    }
-
-    /// Ladda EXIF-data för en bild
-    fn load_exif_data(&mut self, image_id: i64, path: &PathBuf) {
-        if self.exif_cache.contains_key(&image_id) {
-            return;
-        }
-
-        let exif = ExifData::from_file(path).ok().flatten();
-        self.exif_cache.insert(image_id, exif);
     }
 
     /// Bygg full sökväg till en bild
@@ -521,7 +451,6 @@ impl ImageGallery {
         self.needs_refresh = true;
         self.thumbnails.clear();
         self.full_textures.clear();
-        self.exif_cache.clear();
         self.person_dir = None;
     }
 }

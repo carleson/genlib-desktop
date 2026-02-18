@@ -58,7 +58,7 @@ impl ExifData {
 
         let exif = match exif::Reader::new().read_from_container(&mut reader) {
             Ok(e) => e,
-            Err(_) => return Ok(None), // Ingen EXIF-data eller format som ej stöds
+            Err(_) => return Ok(None),
         };
 
         let mut data = ExifData::default();
@@ -151,10 +151,22 @@ impl ExifData {
         }
 
         // Kolla om vi faktiskt hittade någon data
-        if data.date_taken.is_none()
-            && data.camera_model.is_none()
-            && data.gps_latitude.is_none()
-        {
+        let has_data = data.date_taken.is_some()
+            || data.camera_model.is_some()
+            || data.camera_make.is_some()
+            || data.focal_length.is_some()
+            || data.f_number.is_some()
+            || data.exposure_time.is_some()
+            || data.iso.is_some()
+            || data.width.is_some()
+            || data.height.is_some()
+            || data.gps_latitude.is_some()
+            || data.orientation.is_some()
+            || data.description.is_some()
+            || data.copyright.is_some()
+            || data.artist.is_some();
+
+        if !has_data {
             return Ok(None);
         }
 

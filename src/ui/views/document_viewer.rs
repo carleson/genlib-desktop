@@ -11,6 +11,7 @@ use crate::ui::{
     theme::{Colors, Icons},
     View,
 };
+use crate::utils::exif::ExifData;
 use crate::utils::file_ops;
 
 /// Tillstånd för dokumentvisning
@@ -31,6 +32,8 @@ pub struct DocumentViewerView {
     image_texture: Option<TextureHandle>,
     /// Felmeddelande
     error_message: Option<String>,
+    /// EXIF-data för bilder
+    exif_data: Option<ExifData>,
     /// Behöver laddas om
     needs_refresh: bool,
     /// Visa bild i lightbox (helskärm)
@@ -49,6 +52,7 @@ impl DocumentViewerView {
             text_content: None,
             text_modified: false,
             image_texture: None,
+            exif_data: None,
             error_message: None,
             needs_refresh: true,
             show_image_lightbox: false,
@@ -96,6 +100,7 @@ impl DocumentViewerView {
         self.text_content = None;
         self.text_modified = false;
         self.image_texture = None;
+        self.exif_data = None;
 
         // Hämta fullständig sökväg
         let Some(ref person) = self.person else {
@@ -135,6 +140,8 @@ impl DocumentViewerView {
                     self.error_message = Some(format!("Kunde inte läsa textfil: {}", e));
                 }
             }
+        } else if doc.is_image() {
+            self.exif_data = ExifData::from_file(&full_path).ok().flatten();
         }
         // Bildladdning hanteras separat i show() för att ha tillgång till egui context
     }
@@ -315,6 +322,67 @@ impl DocumentViewerView {
                         ui.label(RichText::new(&doc.relative_path).small());
                         ui.end_row();
                     });
+
+                // EXIF-information för bilder
+                if doc.is_image() {
+                    if let Some(ref exif) = self.exif_data {
+                        ui.add_space(12.0);
+                        ui.label(RichText::new("EXIF-information").strong());
+                        ui.add_space(4.0);
+
+                        egui::Frame::none()
+                            .fill(ui.visuals().faint_bg_color)
+                            .rounding(4.0)
+                            .inner_margin(8.0)
+                            .show(ui, |ui| {
+                                egui::Grid::new("exif_info_grid")
+                                    .num_columns(2)
+                                    .spacing([16.0, 4.0])
+                                    .show(ui, |ui| {
+                                        if let Some(ref desc) = exif.description {
+                                            ui.label(RichText::new("Beskrivning:").color(Colors::TEXT_SECONDARY));
+                                            ui.label(desc);
+                                            ui.end_row();
+                                        }
+                                        if let Some(dt) = exif.date_taken {
+                                            ui.label(RichText::new("Tagit:").color(Colors::TEXT_SECONDARY));
+                                            ui.label(dt.format("%Y-%m-%d %H:%M").to_string());
+                                            ui.end_row();
+                                        }
+                                        if let Some(cam) = exif.camera_info() {
+                                            ui.label(RichText::new("Kamera:").color(Colors::TEXT_SECONDARY));
+                                            ui.label(cam);
+                                            ui.end_row();
+                                        }
+                                        if let Some(exp) = exif.exposure_info() {
+                                            ui.label(RichText::new("Exponering:").color(Colors::TEXT_SECONDARY));
+                                            ui.label(exp);
+                                            ui.end_row();
+                                        }
+                                        if let Some(dim) = exif.dimensions_string() {
+                                            ui.label(RichText::new("Dimensioner:").color(Colors::TEXT_SECONDARY));
+                                            ui.label(format!("{} px", dim));
+                                            ui.end_row();
+                                        }
+                                        if let Some(gps) = exif.gps_string() {
+                                            ui.label(RichText::new("GPS:").color(Colors::TEXT_SECONDARY));
+                                            ui.label(gps);
+                                            ui.end_row();
+                                        }
+                                        if let Some(ref artist) = exif.artist {
+                                            ui.label(RichText::new("Fotograf:").color(Colors::TEXT_SECONDARY));
+                                            ui.label(artist);
+                                            ui.end_row();
+                                        }
+                                        if let Some(ref copyright) = exif.copyright {
+                                            ui.label(RichText::new("Copyright:").color(Colors::TEXT_SECONDARY));
+                                            ui.label(copyright);
+                                            ui.end_row();
+                                        }
+                                    });
+                            });
+                    }
+                }
 
                 ui.add_space(16.0);
 
