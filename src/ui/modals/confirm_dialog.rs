@@ -102,6 +102,53 @@ impl ConfirmDialog {
                     }
                 }
             }
+            ConfirmAction::DeleteResource(id) => {
+                match db.resources().delete(*id) {
+                    Ok(_) => {
+                        state.show_success("Resurs raderad");
+                        state.selected_resource_id = None;
+                        state.navigate(crate::ui::View::ResourceList);
+                    }
+                    Err(e) => {
+                        state.show_error(&format!("Kunde inte radera: {}", e));
+                    }
+                }
+            }
+            ConfirmAction::DeleteResourceAddress(id) => {
+                match db.resources().delete_address(*id) {
+                    Ok(_) => {
+                        state.show_success("Adress raderad");
+                    }
+                    Err(e) => {
+                        state.show_error(&format!("Kunde inte radera adress: {}", e));
+                    }
+                }
+            }
+            ConfirmAction::DeleteResourceDocument(id) => {
+                // Ta bort fysisk fil innan DB-post
+                if let Ok(Some(doc)) = db.resources().find_document_by_id(*id) {
+                    if let Ok(Some((resource, resource_type))) = db.resources().find_with_type(doc.resource_id) {
+                        if let Ok(config) = db.config().get() {
+                            let full_path = doc.full_path(
+                                &config.media_directory_path.display().to_string(),
+                                &resource_type.directory_name,
+                                &resource.directory_name,
+                            );
+                            if let Err(e) = crate::utils::file_ops::delete_file(&full_path) {
+                                eprintln!("Kunde inte ta bort fil {:?}: {}", full_path, e);
+                            }
+                        }
+                    }
+                }
+                match db.resources().delete_document(*id) {
+                    Ok(_) => {
+                        state.show_success("Dokument raderat");
+                    }
+                    Err(e) => {
+                        state.show_error(&format!("Kunde inte radera dokument: {}", e));
+                    }
+                }
+            }
         }
     }
 }

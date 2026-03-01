@@ -179,6 +179,7 @@ pub enum ShortcutAction {
     NavigateFamilyTree,
     NavigateChecklistSearch,
     NavigateSettings,
+    NavigateResourceList,
     NewPerson,
     FocusSearch,
     Backup,
@@ -195,6 +196,7 @@ impl ShortcutAction {
         Self::NavigateFamilyTree,
         Self::NavigateChecklistSearch,
         Self::NavigateSettings,
+        Self::NavigateResourceList,
         Self::NewPerson,
         Self::FocusSearch,
         Self::Backup,
@@ -211,6 +213,7 @@ impl ShortcutAction {
             Self::NavigateFamilyTree => "Släktträd",
             Self::NavigateChecklistSearch => "Uppgifter",
             Self::NavigateSettings => "Inställningar",
+            Self::NavigateResourceList => "Resurser",
             Self::NewPerson => "Ny person",
             Self::FocusSearch => "Sök",
             Self::Backup => "Backup",
@@ -228,6 +231,7 @@ impl ShortcutAction {
             Self::NavigateFamilyTree => "navigate_family_tree",
             Self::NavigateChecklistSearch => "navigate_checklist_search",
             Self::NavigateSettings => "navigate_settings",
+            Self::NavigateResourceList => "navigate_resource_list",
             Self::NewPerson => "new_person",
             Self::FocusSearch => "focus_search",
             Self::Backup => "backup",
@@ -245,6 +249,7 @@ impl ShortcutAction {
             "navigate_family_tree" => Some(Self::NavigateFamilyTree),
             "navigate_checklist_search" => Some(Self::NavigateChecklistSearch),
             "navigate_settings" => Some(Self::NavigateSettings),
+            "navigate_resource_list" => Some(Self::NavigateResourceList),
             "new_person" => Some(Self::NewPerson),
             "focus_search" => Some(Self::FocusSearch),
             "backup" => Some(Self::Backup),
@@ -360,6 +365,7 @@ pub fn default_shortcuts() -> ShortcutMap {
     m.insert(ShortcutAction::NavigatePersonList, KeyboardShortcut::new(egui::Key::Num2, true, false, false));
     m.insert(ShortcutAction::NavigateFamilyTree, KeyboardShortcut::new(egui::Key::Num3, true, false, false));
     m.insert(ShortcutAction::NavigateChecklistSearch, KeyboardShortcut::new(egui::Key::Num4, true, false, false));
+    m.insert(ShortcutAction::NavigateResourceList, KeyboardShortcut::new(egui::Key::Num5, true, false, false));
     m.insert(ShortcutAction::NavigateSettings, KeyboardShortcut::new(egui::Key::Comma, true, false, false));
     m.insert(ShortcutAction::NewPerson, KeyboardShortcut::new(egui::Key::N, true, false, false));
     m.insert(ShortcutAction::FocusSearch, KeyboardShortcut::new(egui::Key::F, true, false, false));

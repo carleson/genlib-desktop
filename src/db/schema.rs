@@ -1,7 +1,7 @@
 /// SQL-schema för Genlib Desktop
 /// Kompatibelt med Django-export för migration
 
-pub const SCHEMA_VERSION: i32 = 6;
+pub const SCHEMA_VERSION: i32 = 7;
 
 pub const CREATE_TABLES: &str = r#"
 -- Systeminställningar (singleton, id=1)
@@ -134,6 +134,66 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     version INTEGER PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Resurstyper
+CREATE TABLE IF NOT EXISTS resource_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    directory_name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Resurser
+CREATE TABLE IF NOT EXISTS resources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resource_type_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    directory_name TEXT NOT NULL UNIQUE,
+    information TEXT,
+    comment TEXT,
+    lat REAL,
+    lon REAL,
+    profile_image_path TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (resource_type_id) REFERENCES resource_types(id) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_resources_type ON resources(resource_type_id);
+CREATE INDEX IF NOT EXISTS idx_resources_name ON resources(name);
+
+-- Resursadresser
+CREATE TABLE IF NOT EXISTS resource_addresses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resource_id INTEGER NOT NULL,
+    street TEXT,
+    postal_code TEXT,
+    city TEXT,
+    country TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_resource_addresses_resource ON resource_addresses(resource_id);
+
+-- Resursdokument
+CREATE TABLE IF NOT EXISTS resource_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resource_id INTEGER NOT NULL,
+    document_type_id INTEGER,
+    filename TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    file_size INTEGER NOT NULL DEFAULT 0,
+    file_type TEXT,
+    file_modified_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE,
+    FOREIGN KEY (document_type_id) REFERENCES document_types(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_resource_documents_resource ON resource_documents(resource_id);
 "#;
 
 /// Standard dokumenttyper att skapa vid första start

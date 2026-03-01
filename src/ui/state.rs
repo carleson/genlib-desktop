@@ -19,6 +19,8 @@ pub enum View {
     ChecklistSearch,
     Reports,
     DocumentTemplates,
+    ResourceList,
+    ResourceDetail,
 }
 
 /// Centraliserat applikationstillstånd
@@ -86,6 +88,15 @@ pub struct AppState {
     pub person_history_cursor: usize,
     /// Flagga: pågående historiknavigering (undvik push)
     pub navigating_history: bool,
+
+    /// Vald resurs (för detaljvy)
+    pub selected_resource_id: Option<i64>,
+
+    /// Visar resursformulär
+    pub show_resource_form: bool,
+
+    /// Resurs som redigeras (None = ny resurs)
+    pub editing_resource_id: Option<i64>,
 }
 
 impl AppState {
@@ -187,6 +198,30 @@ impl AppState {
         self.editing_person_id = None;
     }
 
+    /// Navigera till resursdetalj
+    pub fn navigate_to_resource(&mut self, resource_id: i64) {
+        self.selected_resource_id = Some(resource_id);
+        self.current_view = View::ResourceDetail;
+    }
+
+    /// Öppna resursformulär för ny resurs
+    pub fn open_new_resource_form(&mut self) {
+        self.editing_resource_id = None;
+        self.show_resource_form = true;
+    }
+
+    /// Öppna resursformulär för redigering
+    pub fn open_edit_resource_form(&mut self, resource_id: i64) {
+        self.editing_resource_id = Some(resource_id);
+        self.show_resource_form = true;
+    }
+
+    /// Stäng resursformulär
+    pub fn close_resource_form(&mut self) {
+        self.show_resource_form = false;
+        self.editing_resource_id = None;
+    }
+
     /// Visa bekräftelsedialog
     pub fn show_confirm(&mut self, message: &str, action: ConfirmAction) {
         self.confirm_dialog_message = message.to_string();
@@ -235,6 +270,9 @@ pub enum ConfirmAction {
     DeletePerson(i64),
     DeleteRelationship(i64),
     DeleteDocument(i64),
+    DeleteResource(i64),
+    DeleteResourceAddress(i64),
+    DeleteResourceDocument(i64),
 }
 
 /// Statusmeddelande

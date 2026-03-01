@@ -5,6 +5,7 @@ pub mod document_repo;
 pub mod relationship_repo;
 pub mod config_repo;
 pub mod checklist_repo;
+pub mod resource_repo;
 
 use anyhow::Result;
 use rusqlite::Connection;
@@ -16,6 +17,7 @@ pub use document_repo::DocumentRepository;
 pub use relationship_repo::RelationshipRepository;
 pub use config_repo::ConfigRepository;
 pub use checklist_repo::ChecklistRepository;
+pub use resource_repo::ResourceRepository;
 
 /// Huvuddatabas-wrapper med thread-safe access
 pub struct Database {
@@ -88,6 +90,11 @@ impl Database {
     /// Hämta checklist-repository
     pub fn checklists(&self) -> ChecklistRepository {
         ChecklistRepository::new(Arc::clone(&self.conn))
+    }
+
+    /// Hämta resurs-repository
+    pub fn resources(&self) -> ResourceRepository {
+        ResourceRepository::new(Arc::clone(&self.conn))
     }
 
     /// Direkt tillgång till connection (för avancerade operationer)

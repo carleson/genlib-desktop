@@ -60,6 +60,9 @@ fn initial_setup(conn: &Connection) -> Result<()> {
     // Sätt in standardmallar
     insert_default_templates(conn)?;
 
+    // Sätt in standardresurstyper
+    insert_default_resource_types(conn)?;
+
     // Markera migration som klar
     conn.execute(
         "INSERT INTO schema_migrations (version) VALUES (?)",
@@ -97,6 +100,16 @@ fn insert_default_templates(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn insert_default_resource_types(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO resource_types (name, directory_name) VALUES ('Fastigheter', 'fastigheter');
+         INSERT OR IGNORE INTO resource_types (name, directory_name) VALUES ('Företag', 'företag');
+         INSERT OR IGNORE INTO resource_types (name, directory_name) VALUES ('Platser', 'platser');"
+    )?;
+    info!("Lade till standardresurstyper");
+    Ok(())
+}
+
 fn migrate_from(conn: &Connection, from_version: i32) -> Result<()> {
     // Kör migrationer stegvis
     for version in (from_version + 1)..=SCHEMA_VERSION {
@@ -106,6 +119,7 @@ fn migrate_from(conn: &Connection, from_version: i32) -> Result<()> {
             4 => migrate_v3_to_v4(conn)?,
             5 => migrate_v4_to_v5(conn)?,
             6 => migrate_v5_to_v6(conn)?,
+            7 => migrate_v6_to_v7(conn)?,
             _ => {}
         }
 
@@ -199,6 +213,72 @@ fn migrate_v5_to_v6(conn: &Connection) -> Result<()> {
     info!("Migration v6: Tar bort tags-kolumnen från documents");
 
     conn.execute_batch("ALTER TABLE documents DROP COLUMN tags;")?;
+
+    Ok(())
+}
+
+/// Migration v6 -> v7: Lägg till resurstabeller
+fn migrate_v6_to_v7(conn: &Connection) -> Result<()> {
+    info!("Migration v7: Lägger till resurstabeller");
+
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS resource_types (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            directory_name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS resources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            resource_type_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            directory_name TEXT NOT NULL UNIQUE,
+            information TEXT,
+            comment TEXT,
+            lat REAL,
+            lon REAL,
+            profile_image_path TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (resource_type_id) REFERENCES resource_types(id) ON DELETE RESTRICT
+        );
+        CREATE INDEX IF NOT EXISTS idx_resources_type ON resources(resource_type_id);
+        CREATE INDEX IF NOT EXISTS idx_resources_name ON resources(name);
+        CREATE TABLE IF NOT EXISTS resource_addresses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            resource_id INTEGER NOT NULL,
+            street TEXT,
+            postal_code TEXT,
+            city TEXT,
+            country TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_resource_addresses_resource ON resource_addresses(resource_id);
+        CREATE TABLE IF NOT EXISTS resource_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            resource_id INTEGER NOT NULL,
+            document_type_id INTEGER,
+            filename TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            file_size INTEGER NOT NULL DEFAULT 0,
+            file_type TEXT,
+            file_modified_at TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE,
+            FOREIGN KEY (document_type_id) REFERENCES document_types(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_resource_documents_resource ON resource_documents(resource_id);"
+    )?;
+
+    // Standardresurstyper
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO resource_types (name, directory_name) VALUES ('Fastigheter', 'fastigheter');
+         INSERT OR IGNORE INTO resource_types (name, directory_name) VALUES ('Företag', 'företag');
+         INSERT OR IGNORE INTO resource_types (name, directory_name) VALUES ('Platser', 'platser');"
+    )?;
 
     Ok(())
 }

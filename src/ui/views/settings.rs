@@ -4,6 +4,8 @@ use crate::db::Database;
 use crate::models::config::{
     default_shortcuts, AppSettings, ShortcutAction, ShortcutMap,
 };
+use crate::models::{ResourceType};
+use crate::models::resource::sanitize_directory_name;
 use crate::ui::{
     shortcuts::capture_shortcut,
     state::AppState,
@@ -21,6 +23,10 @@ pub struct SettingsView {
     shortcuts_loaded: bool,
     capturing_action: Option<ShortcutAction>,
     conflict_warning: Option<String>,
+    // Resurstyper
+    resource_types_cache: Vec<ResourceType>,
+    resource_types_loaded: bool,
+    new_resource_type_name: String,
 }
 
 impl SettingsView {
@@ -34,6 +40,9 @@ impl SettingsView {
             shortcuts_loaded: false,
             capturing_action: None,
             conflict_warning: None,
+            resource_types_cache: Vec::new(),
+            resource_types_loaded: false,
+            new_resource_type_name: String::new(),
         }
     }
 
@@ -46,7 +55,15 @@ impl SettingsView {
     ) {
         if self.needs_refresh {
             self.refresh_config(db);
+            self.resource_types_loaded = false;
             self.needs_refresh = false;
+        }
+
+        if !self.resource_types_loaded {
+            if let Ok(types) = db.resources().get_all_types() {
+                self.resource_types_cache = types;
+                self.resource_types_loaded = true;
+            }
         }
 
         // Ladda genvägar från app_settings första gången
@@ -225,6 +242,11 @@ impl SettingsView {
 
                     ui.add_space(16.0);
 
+                    // Resurstyper
+                    self.show_resource_types_section(ui, state, db);
+
+                    ui.add_space(16.0);
+
                     // Rapporter & Export
                     egui::Frame::none()
                         .fill(ui.visuals().extreme_bg_color)
@@ -298,6 +320,96 @@ impl SettingsView {
                 });
             });
         });
+    }
+
+    fn show_resource_types_section(&mut self, ui: &mut egui::Ui, state: &mut AppState, db: &Database) {
+        egui::Frame::none()
+            .fill(ui.visuals().extreme_bg_color)
+            .rounding(8.0)
+            .inner_margin(16.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                ui.label(RichText::new("Resurstyper").strong());
+                ui.add_space(8.0);
+
+                // Lista befintliga typer
+                let types = self.resource_types_cache.clone();
+                for t in &types {
+                    ui.horizontal(|ui| {
+                        ui.label(&t.name);
+                        ui.label(
+                            RichText::new(format!("({})", t.directory_name))
+                                .small()
+                                .color(Colors::TEXT_MUTED),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if let Some(type_id) = t.id {
+                                if ui.small_button(Icons::DELETE)
+                                    .on_hover_text("Ta bort typ")
+                                    .clicked()
+                                {
+                                    match db.resources().type_has_resources(type_id) {
+                                        Ok(true) => {
+                                            state.show_error("Kan inte ta bort typ – det finns resurser av den typen");
+                                        }
+                                        Ok(false) => {
+                                            // Ta bort direkt (inga resurser kopplade)
+                                            match db.resources().delete_type(type_id) {
+                                                Ok(_) => {
+                                                    self.resource_types_loaded = false;
+                                                    state.show_success(&format!("Resurstyp \"{}\" raderad", t.name));
+                                                }
+                                                Err(e) => {
+                                                    state.show_error(&format!("Kunde inte radera typ: {}", e));
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            state.show_error(&format!("Fel: {}", e));
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    });
+                }
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                // Lägg till ny typ (inline)
+                ui.label(RichText::new("Ny resurstyp:").small());
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.new_resource_type_name)
+                            .hint_text("Namn på typen")
+                            .desired_width(200.0),
+                    );
+                    if ui.button(format!("{} Lägg till", Icons::ADD)).clicked() {
+                        let name = self.new_resource_type_name.trim().to_string();
+                        if !name.is_empty() {
+                            let t = ResourceType {
+                                id: None,
+                                name: name.clone(),
+                                directory_name: sanitize_directory_name(&name),
+                                created_at: None,
+                                updated_at: None,
+                            };
+                            match db.resources().create_type(&t) {
+                                Ok(_) => {
+                                    self.new_resource_type_name.clear();
+                                    self.resource_types_loaded = false;
+                                    state.show_success(&format!("Resurstyp \"{}\" skapad", name));
+                                }
+                                Err(e) => {
+                                    state.show_error(&format!("Kunde inte skapa typ: {}", e));
+                                }
+                            }
+                        }
+                    }
+                });
+            });
     }
 
     fn show_shortcuts_section(&mut self, ui: &mut egui::Ui, state: &mut AppState) {

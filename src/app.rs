@@ -6,14 +6,14 @@ use std::sync::Arc;
 use crate::db::Database;
 use crate::models::config::{AppSettings, ShortcutAction};
 use crate::ui::{
-    modals::{ArchiveModal, ConfirmDialog, DocumentUploadModal, GedcomImportModal, PersonFormModal, RelationshipFormModal},
+    modals::{ArchiveModal, ConfirmDialog, DocumentUploadModal, GedcomImportModal, PersonFormModal, RelationshipFormModal, ResourceFormModal},
     shortcuts::ShortcutManager,
     state::AppState,
     theme::configure_style,
     views::{
         BackupView, ChecklistSearchView, ChecklistTemplatesView, DashboardView, DocumentTemplatesView,
-        DocumentViewerView, FamilyTreeView, PersonDetailView, PersonListView, ReportsView, SettingsView,
-        SetupWizardView, SplashScreenView,
+        DocumentViewerView, FamilyTreeView, PersonDetailView, PersonListView, ReportsView,
+        ResourceDetailView, ResourceListView, SettingsView, SetupWizardView, SplashScreenView,
     },
     View,
 };
@@ -39,6 +39,11 @@ pub struct GenlibApp {
     setup_wizard: SetupWizardView,
     reports_view: ReportsView,
     document_templates: DocumentTemplatesView,
+
+    // Resurser
+    resource_list: ResourceListView,
+    resource_detail: ResourceDetailView,
+    resource_form: ResourceFormModal,
 
     // Modals
     person_form_modal: PersonFormModal,
@@ -119,6 +124,9 @@ impl GenlibApp {
             reports_view: ReportsView::new(),
             document_templates: DocumentTemplatesView::new(),
             splash_screen: SplashScreenView::new(next_view),
+            resource_list: ResourceListView::new(),
+            resource_detail: ResourceDetailView::new(),
+            resource_form: ResourceFormModal::new(),
             person_form_modal: PersonFormModal::new(),
             document_upload_modal: DocumentUploadModal::new(),
             relationship_form_modal: RelationshipFormModal::new(),
@@ -149,6 +157,8 @@ impl GenlibApp {
             View::ChecklistTemplates => self.checklist_templates.mark_needs_refresh(),
             View::Reports => self.reports_view.mark_needs_refresh(),
             View::DocumentTemplates => self.document_templates.mark_needs_refresh(),
+            View::ResourceList => self.resource_list.mark_needs_refresh(),
+            View::ResourceDetail => self.resource_detail.mark_needs_refresh(),
         }
     }
 
@@ -160,6 +170,7 @@ impl GenlibApp {
             || self.state.show_relationship_form
             || self.state.show_gedcom_import
             || self.state.show_archive_modal
+            || self.state.show_resource_form
     }
 
     /// Stäng översta modalen
@@ -168,6 +179,8 @@ impl GenlibApp {
             self.state.close_confirm();
         } else if self.state.show_person_form {
             self.state.close_person_form();
+        } else if self.state.show_resource_form {
+            self.state.close_resource_form();
         } else if self.state.show_document_upload {
             self.state.close_document_upload();
         } else if self.state.show_relationship_form {
@@ -206,6 +219,7 @@ impl GenlibApp {
             ShortcutAction::NavigateFamilyTree => self.navigate_to(View::FamilyTree),
             ShortcutAction::NavigateChecklistSearch => self.navigate_to(View::ChecklistSearch),
             ShortcutAction::NavigateSettings => self.navigate_to(View::Settings),
+            ShortcutAction::NavigateResourceList => self.navigate_to(View::ResourceList),
             ShortcutAction::NewPerson => {
                 self.state.open_new_person_form();
             }
@@ -288,6 +302,7 @@ impl eframe::App for GenlibApp {
                     (View::PersonList, "👥 Personer", ShortcutAction::NavigatePersonList),
                     (View::FamilyTree, "🌳 Släktträd", ShortcutAction::NavigateFamilyTree),
                     (View::ChecklistSearch, "✓ Uppgifter", ShortcutAction::NavigateChecklistSearch),
+                    (View::ResourceList, "📍 Resurser", ShortcutAction::NavigateResourceList),
                 ];
 
                 for (view, label, shortcut_action) in nav_items {
@@ -398,6 +413,12 @@ impl eframe::App for GenlibApp {
                 View::DocumentTemplates => {
                     self.document_templates.show(ui, &mut self.state, &self.db);
                 }
+                View::ResourceList => {
+                    self.resource_list.show(ui, &mut self.state, &self.db);
+                }
+                View::ResourceDetail => {
+                    self.resource_detail.show(ui, &mut self.state, &self.db);
+                }
                 View::Splash => {} // Hanteras ovan med early return
             }
         });
@@ -430,6 +451,12 @@ impl eframe::App for GenlibApp {
                         self.state.current_view = View::PersonDetail;
                         self.person_detail.mark_needs_refresh();
                     }
+                    // Om vi är i resursdetalj, uppdatera den (för adresser/dokument)
+                    if self.state.current_view == View::ResourceDetail {
+                        self.resource_detail.mark_needs_refresh();
+                    }
+                    // Uppdatera resurslistan
+                    self.resource_list.mark_needs_refresh();
                 }
             }
         }
@@ -477,6 +504,17 @@ impl eframe::App for GenlibApp {
             if self.archive_modal.show(ctx, &mut self.state, &self.db) {
                 self.dashboard.mark_needs_refresh();
                 self.person_list.mark_needs_refresh();
+            }
+        }
+
+        // Resursformulär modal
+        if self.state.show_resource_form {
+            if self.resource_form.show(ctx, &mut self.state, &self.db) {
+                self.resource_list.mark_needs_refresh();
+                self.dashboard.mark_needs_refresh();
+                if self.state.current_view == View::ResourceDetail {
+                    self.resource_detail.mark_needs_refresh();
+                }
             }
         }
     }
