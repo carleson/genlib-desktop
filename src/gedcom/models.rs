@@ -21,6 +21,8 @@ pub struct GedcomIndividual {
     pub death_date: Option<GedcomDate>,
     /// Dödsort
     pub death_place: Option<String>,
+    /// Yrken (OCCU) — kan finnas flera
+    pub occupations: Vec<String>,
     /// Anteckningar
     pub notes: Vec<String>,
     /// Familjer där personen är barn (FAMC)
@@ -40,6 +42,7 @@ impl Default for GedcomIndividual {
             birth_place: None,
             death_date: None,
             death_place: None,
+            occupations: Vec::new(),
             notes: Vec::new(),
             family_child: Vec::new(),
             family_spouse: Vec::new(),

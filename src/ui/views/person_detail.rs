@@ -360,6 +360,12 @@ impl PersonDetailView {
                                     ui.end_row();
                                 }
 
+                                if let Some(ref occupation) = person.occupation {
+                                    ui.label(RichText::new("Yrke:").color(Colors::TEXT_SECONDARY));
+                                    ui.label(occupation);
+                                    ui.end_row();
+                                }
+
                                 if let Some(birth_date) = person.birth_date {
                                     ui.label(RichText::new("Födelsedatum:").color(Colors::TEXT_SECONDARY));
                                     ui.label(format!("{} {}", Icons::CALENDAR, birth_date.format("%Y-%m-%d")));

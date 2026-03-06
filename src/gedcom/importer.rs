@@ -16,9 +16,11 @@ use super::parser::GedcomParser;
 pub struct ImportResult {
     /// Antal importerade personer
     pub persons_imported: usize,
+    /// Antal uppdaterade befintliga personer
+    pub persons_updated: usize,
     /// Antal importerade relationer
     pub relations_imported: usize,
-    /// Antal överhoppade (duplicerade)
+    /// Antal överhoppade (duplicerade utan ändringar)
     pub skipped: usize,
     /// Varningar
     pub warnings: Vec<String>,
@@ -28,6 +30,7 @@ impl ImportResult {
     pub fn new() -> Self {
         Self {
             persons_imported: 0,
+            persons_updated: 0,
             relations_imported: 0,
             skipped: 0,
             warnings: Vec::new(),
@@ -53,6 +56,13 @@ impl Default for ImportResult {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[derive(PartialEq)]
+enum ImportStatus {
+    Created,
+    Updated,
+    Skipped,
 }
 
 /// GEDCOM-importer
@@ -81,12 +91,15 @@ impl<'a> GedcomImporter<'a> {
         // Steg 1: Importera alla individer
         for indi in &data.individuals {
             match self.import_individual(indi) {
-                Ok(Some(person_id)) => {
+                Ok((person_id, was_updated)) => {
                     id_map.insert(indi.id.clone(), person_id);
-                    result.persons_imported += 1;
-                }
-                Ok(None) => {
-                    result.skipped += 1;
+                    if was_updated == ImportStatus::Created {
+                        result.persons_imported += 1;
+                    } else if was_updated == ImportStatus::Updated {
+                        result.persons_updated += 1;
+                    } else {
+                        result.skipped += 1;
+                    }
                 }
                 Err(e) => {
                     result.warnings.push(format!(
@@ -186,20 +199,29 @@ impl<'a> GedcomImporter<'a> {
         preview
     }
 
-    fn import_individual(&self, indi: &GedcomIndividual) -> Result<Option<i64>> {
+    fn import_individual(&self, indi: &GedcomIndividual) -> Result<(i64, ImportStatus)> {
         let fmt = self.db.config().get().map(|c| c.dir_name_format).unwrap_or_default();
         let dir_name = indi.generate_directory_name(fmt);
+        let new_occupation = if indi.occupations.is_empty() { None } else { Some(indi.occupations.join(", ")) };
 
         // Kolla om personen redan finns
-        if self
+        if let Some(mut existing) = self
             .db
             .persons()
             .find_by_directory(&dir_name)
             .ok()
             .flatten()
-            .is_some()
         {
-            return Ok(None);
+            let person_id = existing.id.unwrap();
+
+            // Uppdatera occupation om GEDCOM har ett värde
+            if new_occupation.is_some() && existing.occupation != new_occupation {
+                existing.occupation = new_occupation;
+                self.db.persons().update(&mut existing)?;
+                return Ok((person_id, ImportStatus::Updated));
+            }
+
+            return Ok((person_id, ImportStatus::Skipped));
         }
 
         // Skapa unik katalognamn
@@ -212,6 +234,7 @@ impl<'a> GedcomImporter<'a> {
             birth_place: indi.birth_place.clone(),
             birth_date: indi.birth_date.as_ref().and_then(|d| d.to_naive_date()),
             death_date: indi.death_date.as_ref().and_then(|d| d.to_naive_date()),
+            occupation: new_occupation,
             directory_name: unique_dir_name,
             profile_image_path: None,
             created_at: None,
@@ -224,7 +247,7 @@ impl<'a> GedcomImporter<'a> {
 
         self.db.persons().create(&mut person)?;
 
-        Ok(person.id)
+        Ok((person.id.unwrap(), ImportStatus::Created))
     }
 
     fn import_family_relations(

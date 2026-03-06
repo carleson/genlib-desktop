@@ -329,6 +329,16 @@ impl GedcomImportModal {
                             );
                             ui.end_row();
 
+                            if result.persons_updated > 0 {
+                                ui.label("Befintliga uppdaterade:");
+                                ui.label(
+                                    RichText::new(format!("{}", result.persons_updated))
+                                        .strong()
+                                        .color(Colors::SUCCESS),
+                                );
+                                ui.end_row();
+                            }
+
                             ui.label("Relationer skapade:");
                             ui.label(
                                 RichText::new(format!("{}", result.relations_imported))

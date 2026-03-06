@@ -307,6 +307,7 @@ pub struct PersonFormData {
     pub birth_place: String,
     pub birth_date: String,
     pub death_date: String,
+    pub occupation: String,
     pub directory_name: String,
 }
 
@@ -328,6 +329,7 @@ impl PersonFormData {
                 .death_date
                 .map(|d| d.format("%Y-%m-%d").to_string())
                 .unwrap_or_default(),
+            occupation: person.occupation.clone().unwrap_or_default(),
             directory_name: person.directory_name.clone(),
         }
     }

@@ -120,6 +120,7 @@ fn migrate_from(conn: &Connection, from_version: i32) -> Result<()> {
             5 => migrate_v4_to_v5(conn)?,
             6 => migrate_v5_to_v6(conn)?,
             7 => migrate_v6_to_v7(conn)?,
+            8 => migrate_v7_to_v8(conn)?,
             _ => {}
         }
 
@@ -278,6 +279,17 @@ fn migrate_v6_to_v7(conn: &Connection) -> Result<()> {
         "INSERT OR IGNORE INTO resource_types (name, directory_name) VALUES ('Fastigheter', 'fastigheter');
          INSERT OR IGNORE INTO resource_types (name, directory_name) VALUES ('Företag', 'företag');
          INSERT OR IGNORE INTO resource_types (name, directory_name) VALUES ('Platser', 'platser');"
+    )?;
+
+    Ok(())
+}
+
+/// Migration v7 -> v8: Lägg till occupation i persons
+fn migrate_v7_to_v8(conn: &Connection) -> Result<()> {
+    info!("Migration v8: Lägger till occupation i persons");
+
+    conn.execute_batch(
+        "ALTER TABLE persons ADD COLUMN occupation TEXT;"
     )?;
 
     Ok(())

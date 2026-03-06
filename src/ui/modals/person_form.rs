@@ -76,6 +76,10 @@ impl PersonFormModal {
                         ui.text_edit_singleline(&mut self.form_data.birth_place);
                         ui.end_row();
 
+                        ui.label("Yrke:");
+                        ui.text_edit_singleline(&mut self.form_data.occupation);
+                        ui.end_row();
+
                         ui.label("Födelsedatum:");
                         ui.horizontal(|ui| {
                             ui.add(egui::TextEdit::singleline(&mut self.form_data.birth_date)
@@ -212,12 +216,14 @@ impl PersonFormModal {
             person.birth_place = if self.form_data.birth_place.is_empty() { None } else { Some(self.form_data.birth_place.clone()) };
             person.birth_date = birth_date;
             person.death_date = death_date;
+            person.occupation = if self.form_data.occupation.is_empty() { None } else { Some(self.form_data.occupation.clone()) };
             person.directory_name = self.form_data.directory_name.clone();
 
             db.persons().update(&mut person)?;
         } else {
             // Skapa ny
             let birth_place = if self.form_data.birth_place.is_empty() { None } else { Some(self.form_data.birth_place.clone()) };
+            let occupation = if self.form_data.occupation.is_empty() { None } else { Some(self.form_data.occupation.clone()) };
             let mut person = Person {
                 id: None,
                 firstname,
@@ -225,6 +231,7 @@ impl PersonFormModal {
                 birth_place,
                 birth_date,
                 death_date,
+                occupation,
                 age: None,
                 directory_name: self.form_data.directory_name.clone(),
                 profile_image_path: None,

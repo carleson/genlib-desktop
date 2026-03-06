@@ -202,6 +202,11 @@ impl GedcomParser {
                     i += consumed;
                     continue;
                 }
+                "OCCU" => {
+                    if let Some(ref val) = line.value {
+                        indi.occupations.push(val.clone());
+                    }
+                }
                 "NOTE" => {
                     if let Some(ref note) = line.value {
                         indi.notes.push(note.clone());
@@ -510,6 +515,25 @@ mod tests {
             gunnar.death_date.as_ref().unwrap().to_naive_date(),
             chrono::NaiveDate::from_ymd_opt(1971, 1, 19)
         );
+    }
+
+    #[test]
+    fn test_parse_occu() {
+        let gedcom = r#"0 HEAD
+0 @I1@ INDI
+1 NAME Johan /Snickare/
+1 OCCU Snickare
+2 PLAC Lund
+1 OCCU Byggnadssnickare
+2 DATE Före 1 jan 1970
+1 OCCU Vaktmästare
+1 BIRT
+2 DATE 1 JAN 1980
+0 TRLR"#;
+
+        let data = GedcomParser::parse_string(gedcom).unwrap();
+        let person = data.find_individual("@I1@").unwrap();
+        assert_eq!(person.occupations, vec!["Snickare", "Byggnadssnickare", "Vaktmästare"]);
     }
 
     /// Test: Multipla NAME-poster – andra NAME (TYPE aka) utan förnamn
