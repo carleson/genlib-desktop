@@ -7,6 +7,7 @@
 pub mod models;
 pub mod db;
 pub mod gedcom;
+pub mod projects;
 pub mod services;
 pub mod ui;
 pub mod utils;

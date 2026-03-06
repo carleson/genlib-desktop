@@ -1,10 +1,24 @@
 use std::path::{Path, PathBuf};
 
-/// Hämta databassökväg
+/// Hämta databassökväg (legacy — används för migration)
 pub fn get_database_path() -> PathBuf {
     directories::ProjectDirs::from("se", "genlib", "Genlib")
         .map(|dirs| dirs.data_dir().join("genlib.db"))
         .unwrap_or_else(|| PathBuf::from("genlib.db"))
+}
+
+/// Hämta sökväg till projektregistret (projects.toml)
+pub fn get_projects_registry_path() -> PathBuf {
+    directories::ProjectDirs::from("se", "genlib", "Genlib")
+        .map(|dirs| dirs.data_dir().join("projects.toml"))
+        .unwrap_or_else(|| PathBuf::from("projects.toml"))
+}
+
+/// Hämta rotkatalog för alla projekt
+pub fn get_default_projects_dir() -> PathBuf {
+    directories::ProjectDirs::from("se", "genlib", "Genlib")
+        .map(|dirs| dirs.data_dir().join("projects"))
+        .unwrap_or_else(|| PathBuf::from("projects"))
 }
 
 /// Hämta konfigurationssökväg

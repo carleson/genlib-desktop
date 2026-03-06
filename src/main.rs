@@ -9,6 +9,7 @@ mod app;
 mod db;
 mod gedcom;
 mod models;
+mod projects;
 mod services;
 mod ui;
 mod utils;

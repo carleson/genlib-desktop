@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::db::Database;
 use crate::models::config::{AppSettings, ShortcutAction};
+use crate::projects::{Project, ProjectAction, ProjectRegistry};
 use crate::ui::{
     modals::{ArchiveModal, ConfirmDialog, DocumentUploadModal, GedcomImportModal, PersonFormModal, RelationshipFormModal, ResourceFormModal},
     shortcuts::ShortcutManager,
@@ -12,12 +13,13 @@ use crate::ui::{
     theme::configure_style,
     views::{
         BackupView, ChecklistSearchView, ChecklistTemplatesView, DashboardView, DocumentTemplatesView,
-        DocumentViewerView, FamilyTreeView, PersonDetailView, PersonListView, ReportsView,
-        ResourceDetailView, ResourceListView, SettingsView, SetupWizardView, SplashScreenView,
+        DocumentViewerView, FamilyTreeView, PersonDetailView, PersonListView, ProjectSelectorView,
+        ReportsView, ResourceDetailView, ResourceListView, SettingsView, SetupWizardView,
+        SplashScreenView,
     },
     View,
 };
-use crate::utils::path::get_database_path;
+use crate::utils::path::{get_database_path, get_default_projects_dir};
 
 /// Huvudapplikation
 pub struct GenlibApp {
@@ -25,6 +27,12 @@ pub struct GenlibApp {
     state: AppState,
     app_settings: AppSettings,
     shortcut_manager: ShortcutManager,
+
+    // Projektstöd
+    current_project: Option<Project>,
+    project_registry: ProjectRegistry,
+    show_project_selector: bool,
+    project_selector: ProjectSelectorView,
 
     // Vyer
     dashboard: DashboardView,
@@ -62,45 +70,75 @@ pub struct GenlibApp {
 impl GenlibApp {
     /// Skapa ny applikation
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // Konfigurera fonts
         configure_fonts(&cc.egui_ctx);
 
-        // Ladda appinställningar
         let app_settings = AppSettings::load();
         let shortcut_manager = ShortcutManager::new(app_settings.shortcuts.clone());
 
-        // Öppna databas
-        let db_path = get_database_path();
-        tracing::info!("Öppnar databas: {:?}", db_path);
+        // Ladda projektregister
+        let mut project_registry = ProjectRegistry::load();
 
-        let db = match Database::open(&db_path) {
-            Ok(db) => {
-                // Kör migrationer
-                if let Err(e) = db.migrate() {
-                    tracing::error!("Migrering misslyckades: {}", e);
+        // Migration: gammal installation utan projects.toml
+        if project_registry.projects.is_empty() {
+            let old_db_path = get_database_path();
+            if old_db_path.exists() {
+                tracing::info!("Migrerar befintlig databas till projektsystemet...");
+                let projects_dir = get_default_projects_dir().join("standard");
+                if std::fs::create_dir_all(&projects_dir).is_ok() {
+                    let new_db_path = projects_dir.join("genlib.db");
+                    match std::fs::copy(&old_db_path, &new_db_path) {
+                        Ok(_) => {
+                            let _ = std::fs::remove_file(&old_db_path);
+                            let mut project =
+                                Project::new("Standard", "Migrerat projekt", projects_dir);
+                            project.is_default = true;
+                            project_registry.add(project);
+                            let _ = project_registry.save();
+                            tracing::info!("Migration klar.");
+                        }
+                        Err(e) => tracing::error!("Migration misslyckades: {}", e),
+                    }
                 }
-                Arc::new(db)
-            }
-            Err(e) => {
-                tracing::error!("Kunde inte öppna databas: {}", e);
-                // Försök med in-memory som fallback
-                Arc::new(Database::open_in_memory().expect("Kunde inte skapa in-memory databas"))
-            }
-        };
-
-        // Skapa initial konfiguration om den inte finns
-        let setup_complete = db.config().is_setup_complete().unwrap_or(false);
-        if let Ok(config) = db.config().get() {
-            if setup_complete {
-                let _ = config.ensure_directories();
             }
         }
 
-        let next_view = if setup_complete {
-            View::Dashboard
-        } else {
-            View::SetupWizard
-        };
+        // Öppna default-projekt eller förbered projektväljar-skärm
+        let (db, current_project, show_project_selector, next_view) =
+            if let Some(default) = project_registry.default_project().cloned() {
+                let db_path = default.db_path();
+                match Database::open(&db_path) {
+                    Ok(db) => {
+                        if let Err(e) = db.migrate() {
+                            tracing::error!("Migrering misslyckades: {}", e);
+                        }
+                        let setup_complete =
+                            db.config().is_setup_complete().unwrap_or(false);
+                        if let Ok(config) = db.config().get() {
+                            if setup_complete {
+                                let _ = config.ensure_directories();
+                            }
+                        }
+                        let view = if setup_complete {
+                            View::Dashboard
+                        } else {
+                            View::SetupWizard
+                        };
+                        (Arc::new(db), Some(default), false, view)
+                    }
+                    Err(e) => {
+                        tracing::error!("Kunde inte öppna databas: {}", e);
+                        let db = Database::open_in_memory()
+                            .expect("Kunde inte skapa in-memory databas");
+                        (Arc::new(db), None, true, View::Dashboard)
+                    }
+                }
+            } else {
+                // Inga projekt → visa projektväljar-skärm
+                let db = Database::open_in_memory()
+                    .expect("Kunde inte skapa in-memory databas");
+                let _ = db.migrate();
+                (Arc::new(db), None, true, View::Dashboard)
+            };
 
         let mut state = AppState::new();
         state.current_view = View::Splash;
@@ -111,6 +149,10 @@ impl GenlibApp {
             state,
             app_settings,
             shortcut_manager,
+            current_project,
+            project_registry,
+            show_project_selector,
+            project_selector: ProjectSelectorView::new(),
             dashboard: DashboardView::new(),
             person_list: PersonListView::new(),
             person_detail: PersonDetailView::new(),
@@ -136,6 +178,114 @@ impl GenlibApp {
         }
     }
 
+    /// Öppna ett projekt — byter ut db och återställer vy-tillståndet
+    fn open_project(&mut self, project: &Project) {
+        let db_path = project.db_path();
+        match Database::open(&db_path) {
+            Ok(db) => {
+                if let Err(e) = db.migrate() {
+                    tracing::error!("Migrering misslyckades: {}", e);
+                }
+                self.db = Arc::new(db);
+            }
+            Err(e) => {
+                tracing::error!("Kunde inte öppna databas för projekt '{}': {}", project.name, e);
+                return;
+            }
+        }
+
+        self.current_project = Some(project.clone());
+        self.show_project_selector = false;
+
+        // Återställ AppState men behåll dark_mode
+        let dark_mode = self.state.dark_mode;
+        self.state = AppState::new();
+        self.state.dark_mode = dark_mode;
+
+        // Markera alla vyer som behöver laddas om
+        self.dashboard.mark_needs_refresh();
+        self.person_list.mark_needs_refresh();
+        self.person_detail.mark_needs_refresh();
+        self.family_tree.mark_needs_refresh();
+        self.backup_view.mark_needs_refresh();
+        self.checklist_search.mark_needs_refresh();
+        self.checklist_templates.mark_needs_refresh();
+        self.reports_view.mark_needs_refresh();
+        self.document_templates.mark_needs_refresh();
+        self.resource_list.mark_needs_refresh();
+        self.resource_detail.mark_needs_refresh();
+
+        let setup_complete = self.db.config().is_setup_complete().unwrap_or(false);
+        if let Ok(config) = self.db.config().get() {
+            if setup_complete {
+                let _ = config.ensure_directories();
+            }
+        }
+        self.state.current_view = if setup_complete {
+            View::Dashboard
+        } else {
+            View::SetupWizard
+        };
+    }
+
+    /// Hantera åtgärd från projektväljar-vyn
+    fn handle_project_action(&mut self, action: ProjectAction) {
+        match action {
+            ProjectAction::Open(id) => {
+                if let Some(project) = self.project_registry.find_by_id(&id).cloned() {
+                    self.open_project(&project);
+                }
+            }
+            ProjectAction::CreateNew {
+                name,
+                description,
+                directory,
+            } => {
+                if let Err(e) = std::fs::create_dir_all(&directory) {
+                    tracing::error!("Kunde inte skapa projektmapp: {}", e);
+                    return;
+                }
+                let mut project = Project::new(&name, &description, directory);
+                if self.project_registry.projects.is_empty() {
+                    project.is_default = true;
+                }
+                let project_id = project.id.clone();
+                self.project_registry.add(project);
+                if let Err(e) = self.project_registry.save() {
+                    tracing::error!("Kunde inte spara projektregister: {}", e);
+                }
+                if let Some(project) = self.project_registry.find_by_id(&project_id).cloned() {
+                    self.open_project(&project);
+                }
+            }
+            ProjectAction::Delete(id) => {
+                self.project_registry.remove(&id);
+                let _ = self.project_registry.save();
+                // Om det aktiva projektet togs bort, visa projektväljar-skärmen
+                if self.current_project.as_ref().map(|p| &p.id) == Some(&id) {
+                    self.current_project = None;
+                    self.show_project_selector = true;
+                }
+                if self.project_registry.projects.is_empty() {
+                    self.show_project_selector = true;
+                }
+            }
+            ProjectAction::SetDefault(id) => {
+                self.project_registry.set_default(&id);
+                let _ = self.project_registry.save();
+            }
+            ProjectAction::Rename(id, new_name) => {
+                self.project_registry.rename(&id, &new_name);
+                let _ = self.project_registry.save();
+                // Uppdatera current_project om det är det aktiva
+                if self.current_project.as_ref().map(|p| &p.id) == Some(&id) {
+                    self.current_project =
+                        self.project_registry.find_by_id(&id).cloned();
+                }
+            }
+        }
+    }
+
     /// Hantera navigation och uppdatera relevanta vyer
     fn handle_view_change(&mut self, new_view: View) {
         match new_view {
@@ -144,7 +294,6 @@ impl GenlibApp {
             View::PersonList => self.person_list.mark_needs_refresh(),
             View::PersonDetail => self.person_detail.mark_needs_refresh(),
             View::DocumentViewer => {
-                // Ladda dokument om ett är valt
                 if let Some(doc_id) = self.state.selected_document_id {
                     self.document_viewer.load_document(doc_id, &self.db);
                 }
@@ -162,7 +311,6 @@ impl GenlibApp {
         }
     }
 
-    /// Kolla om någon modal är öppen
     fn any_modal_open(&self) -> bool {
         self.state.show_person_form
             || self.state.show_confirm_dialog
@@ -173,7 +321,6 @@ impl GenlibApp {
             || self.state.show_resource_form
     }
 
-    /// Stäng översta modalen
     fn close_topmost_modal(&mut self) {
         if self.state.show_confirm_dialog {
             self.state.close_confirm();
@@ -192,7 +339,6 @@ impl GenlibApp {
         }
     }
 
-    /// Navigera till vy via genväg
     fn navigate_to(&mut self, view: View) {
         let old = self.state.current_view;
         self.state.current_view = view;
@@ -201,11 +347,9 @@ impl GenlibApp {
         }
     }
 
-    /// Hantera en genvägsåtgärd
     fn handle_shortcut_action(&mut self, action: ShortcutAction, ctx: &egui::Context) {
         let modal_open = self.any_modal_open();
 
-        // Om modal är öppen: tillåt bara CloseModal
         if modal_open {
             if action == ShortcutAction::CloseModal {
                 self.close_topmost_modal();
@@ -232,9 +376,7 @@ impl GenlibApp {
             ShortcutAction::Backup => {
                 self.navigate_to(View::Backup);
             }
-            ShortcutAction::CloseModal => {
-                // Ingen modal öppen — ignorera
-            }
+            ShortcutAction::CloseModal => {}
             ShortcutAction::ToggleDarkMode => {
                 self.state.dark_mode = !self.state.dark_mode;
                 configure_style(ctx, self.state.dark_mode);
@@ -257,13 +399,11 @@ impl GenlibApp {
 
 impl eframe::App for GenlibApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Konfigurera stil (endast första gången eller vid ändring)
         if !self.style_initialized {
             configure_style(ctx, self.state.dark_mode);
             self.style_initialized = true;
         }
 
-        // Rensa gamla statusmeddelanden
         self.state.clear_old_status();
 
         // Splash — rendera utan topbar/statusbar
@@ -273,6 +413,16 @@ impl eframe::App for GenlibApp {
                     let next = self.splash_screen.next_view();
                     self.state.current_view = next;
                     self.handle_view_change(next);
+                }
+            });
+            return;
+        }
+
+        // Projektväljar-skärm — rendera utan topbar/statusbar
+        if self.show_project_selector {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                if let Some(action) = self.project_selector.show(ui, &self.project_registry) {
+                    self.handle_project_action(action);
                 }
             });
             return;
@@ -296,7 +446,6 @@ impl eframe::App for GenlibApp {
                 ui.heading("Genlib");
                 ui.separator();
 
-                // Navigation med genvägs-hints
                 let nav_items = [
                     (View::Dashboard, "📊 Dashboard", ShortcutAction::NavigateDashboard),
                     (View::PersonList, "👥 Personer", ShortcutAction::NavigatePersonList),
@@ -306,9 +455,12 @@ impl eframe::App for GenlibApp {
                 ];
 
                 for (view, label, shortcut_action) in nav_items {
-                    let hint = self.shortcut_manager.shortcut_hint(shortcut_action)
+                    let hint = self
+                        .shortcut_manager
+                        .shortcut_hint(shortcut_action)
                         .unwrap_or_default();
-                    let response = ui.selectable_label(self.state.current_view == view, label);
+                    let response =
+                        ui.selectable_label(self.state.current_view == view, label);
                     if !hint.is_empty() {
                         response.clone().on_hover_text(&hint);
                     }
@@ -325,10 +477,12 @@ impl eframe::App for GenlibApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Dark mode toggle
                     let mode_icon = if self.state.dark_mode { "🌙" } else { "☀" };
-                    if ui.button(mode_icon)
+                    if ui
+                        .button(mode_icon)
                         .on_hover_text(
-                            self.shortcut_manager.shortcut_hint(ShortcutAction::ToggleDarkMode)
-                                .unwrap_or_default()
+                            self.shortcut_manager
+                                .shortcut_hint(ShortcutAction::ToggleDarkMode)
+                                .unwrap_or_default(),
                         )
                         .clicked()
                     {
@@ -340,12 +494,27 @@ impl eframe::App for GenlibApp {
                     if ui
                         .selectable_label(self.state.current_view == View::Settings, "⚙")
                         .on_hover_text(
-                            self.shortcut_manager.shortcut_hint(ShortcutAction::NavigateSettings)
-                                .unwrap_or_default()
+                            self.shortcut_manager
+                                .shortcut_hint(ShortcutAction::NavigateSettings)
+                                .unwrap_or_default(),
                         )
                         .clicked()
                     {
                         self.state.current_view = View::Settings;
+                    }
+
+                    ui.separator();
+
+                    // Projektbytesknapp
+                    if let Some(ref p) = self.current_project {
+                        if ui
+                            .button(format!("📁 {}", p.name))
+                            .on_hover_text("Byt projekt")
+                            .clicked()
+                        {
+                            self.show_project_selector = true;
+                            self.project_selector.reset();
+                        }
                     }
 
                     ui.separator();
@@ -379,7 +548,6 @@ impl eframe::App for GenlibApp {
                 }
                 View::PersonList => {
                     if self.person_list.show(ui, &mut self.state, &self.db) {
-                        // navigate_to_person() redan anropad i person_list — sätter current_view
                         self.person_detail.mark_needs_refresh();
                     }
                 }
@@ -419,7 +587,7 @@ impl eframe::App for GenlibApp {
                 View::ResourceDetail => {
                     self.resource_detail.show(ui, &mut self.state, &self.db);
                 }
-                View::Splash => {} // Hanteras ovan med early return
+                View::Splash => {}
             }
         });
 
@@ -427,7 +595,6 @@ impl eframe::App for GenlibApp {
         if self.state.show_person_form {
             if self.person_form_modal.show(ctx, &mut self.state, &self.db) {
                 self.state.close_person_form();
-                // Uppdatera vyer
                 self.person_list.mark_needs_refresh();
                 self.dashboard.mark_needs_refresh();
                 if self.state.current_view == View::PersonDetail {
@@ -439,36 +606,28 @@ impl eframe::App for GenlibApp {
         if self.state.show_confirm_dialog {
             if let Some(confirmed) = ConfirmDialog::show(ctx, &mut self.state, &self.db) {
                 if confirmed {
-                    // Uppdatera vyer efter radering
                     self.person_list.mark_needs_refresh();
                     self.dashboard.mark_needs_refresh();
-                    // Om vi är i persondetalj, uppdatera den (för relationer/dokument)
                     if self.state.current_view == View::PersonDetail {
                         self.person_detail.mark_needs_refresh();
                     }
-                    // Om vi raderade ett dokument, gå tillbaka till persondetalj
                     if self.state.current_view == View::DocumentViewer {
                         self.state.current_view = View::PersonDetail;
                         self.person_detail.mark_needs_refresh();
                     }
-                    // Om vi är i resursdetalj, uppdatera den (för adresser/dokument)
                     if self.state.current_view == View::ResourceDetail {
                         self.resource_detail.mark_needs_refresh();
                     }
-                    // Uppdatera resurslistan
                     self.resource_list.mark_needs_refresh();
                 }
             }
         }
 
-        // Dokumentuppladdning modal
         if self.state.show_document_upload {
-            // Hämta aktuell person för upload
             if let Some(person_id) = self.state.selected_person_id {
                 if let Ok(Some(person)) = self.db.persons().find_by_id(person_id) {
                     if self.document_upload_modal.show(ctx, &mut self.state, &self.db, &person) {
                         self.state.close_document_upload();
-                        // Uppdatera persondetalj
                         self.person_detail.mark_needs_refresh();
                         self.dashboard.mark_needs_refresh();
                     }
@@ -476,30 +635,25 @@ impl eframe::App for GenlibApp {
             }
         }
 
-        // Relationsformulär modal
         if self.state.show_relationship_form {
             if let Some(person_id) = self.state.selected_person_id {
                 if let Ok(Some(person)) = self.db.persons().find_by_id(person_id) {
                     if self.relationship_form_modal.show(ctx, &mut self.state, &self.db, &person) {
                         self.state.show_relationship_form = false;
-                        // Uppdatera persondetalj för att visa nya relationer
                         self.person_detail.mark_needs_refresh();
                     }
                 }
             }
         }
 
-        // GEDCOM-import modal
         if self.state.show_gedcom_import {
             if self.gedcom_import_modal.show(ctx, &mut self.state, &self.db) {
                 self.state.show_gedcom_import = false;
-                // Uppdatera alla vyer efter import
                 self.dashboard.mark_needs_refresh();
                 self.person_list.mark_needs_refresh();
             }
         }
 
-        // Arkivera projekt modal
         if self.state.show_archive_modal {
             if self.archive_modal.show(ctx, &mut self.state, &self.db) {
                 self.dashboard.mark_needs_refresh();
@@ -507,7 +661,6 @@ impl eframe::App for GenlibApp {
             }
         }
 
-        // Resursformulär modal
         if self.state.show_resource_form {
             if self.resource_form.show(ctx, &mut self.state, &self.db) {
                 self.resource_list.mark_needs_refresh();
@@ -520,8 +673,4 @@ impl eframe::App for GenlibApp {
     }
 }
 
-/// Konfigurera fonts
-fn configure_fonts(_ctx: &egui::Context) {
-    // Använder standardfonterna som har bra Unicode-stöd
-    // Om du vill använda anpassade fonts senare, lägg till dem här
-}
+fn configure_fonts(_ctx: &egui::Context) {}
