@@ -158,7 +158,17 @@ impl Person {
             (None, None) => String::new(),
         };
 
-        format!("{}{}{}", full_name, gedcom_part, year_part)
+        let dir_name = format!("{}{}{}", full_name, gedcom_part, year_part);
+
+        // Gruppera under sanerat efternamnsprefix, precis som de andra formaten
+        let s = surname.as_deref().unwrap_or("").trim();
+        let prefix = if s.is_empty() {
+            "_ovrigt".to_string()
+        } else {
+            Self::sanitize_directory_name(s)
+        };
+
+        format!("{}/{}", prefix, dir_name)
     }
 
     /// Generera katalognamn från denna persons data
@@ -342,7 +352,7 @@ mod tests {
             "akerstrom/1921_12_07_johan_akerstrom"
         );
 
-        // FullName — med födelseår
+        // FullName — med födelseår, grupperat under sanerat efternamn
         assert_eq!(
             Person::generate_directory_name(
                 &Some("Carl Magnus".into()),
@@ -350,7 +360,7 @@ mod tests {
                 &Some("1878-03-15".into()),
                 DirNameFormat::FullName,
             ),
-            "Carl Magnus Carleson (1878)"
+            "carleson/Carl Magnus Carleson (1878)"
         );
 
         // FullName — utan datum
@@ -361,14 +371,14 @@ mod tests {
                 &None,
                 DirNameFormat::FullName,
             ),
-            "Carl Magnus Carleson"
+            "carleson/Carl Magnus Carleson"
         );
     }
 
     #[test]
     fn test_generate_full_name_directory() {
 
-        // Med gedcom_id och båda år
+        // Med gedcom_id och båda år — grupperat under carleson/
         assert_eq!(
             Person::generate_full_name_directory(
                 &Some("Carl Magnus".into()),
@@ -377,7 +387,7 @@ mod tests {
                 Some(1878),
                 Some(1964),
             ),
-            "Carl Magnus Carleson [P45] (1878-1964)"
+            "carleson/Carl Magnus Carleson [P45] (1878-1964)"
         );
 
         // Utan gedcom_id, bara födelseår
@@ -389,10 +399,10 @@ mod tests {
                 Some(1878),
                 None,
             ),
-            "Carl Magnus Carleson (1878)"
+            "carleson/Carl Magnus Carleson (1878)"
         );
 
-        // Bara dödsår
+        // Bara dödsår, inget efternamn → _ovrigt/
         assert_eq!(
             Person::generate_full_name_directory(
                 &Some("Anna".into()),
@@ -401,13 +411,13 @@ mod tests {
                 None,
                 Some(1950),
             ),
-            "Anna (-1950)"
+            "_ovrigt/Anna (-1950)"
         );
 
-        // Okänd person
+        // Okänd person → _ovrigt/
         assert_eq!(
             Person::generate_full_name_directory(&None, &None, &None, None, None),
-            "Okänd"
+            "_ovrigt/Okänd"
         );
     }
 
