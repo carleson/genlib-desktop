@@ -120,6 +120,68 @@ impl Person {
         Ok(())
     }
 
+    /// Generera ett "fullständigt namn"-katalognamn: "Förnamn Efternamn [GedcomId] (FöddÅr-DödÅr)"
+    /// GedcomId: @P45@ → P45 (ta bort @-tecken)
+    pub fn generate_full_name_directory(
+        firstname: &Option<String>,
+        surname: &Option<String>,
+        gedcom_id: &Option<String>,
+        birth_year: Option<i32>,
+        death_year: Option<i32>,
+    ) -> String {
+        let full_name = match (firstname.as_deref(), surname.as_deref()) {
+            (Some(f), Some(s)) if !f.trim().is_empty() && !s.trim().is_empty() => {
+                format!("{} {}", f.trim(), s.trim())
+            }
+            (Some(f), _) if !f.trim().is_empty() => f.trim().to_string(),
+            (_, Some(s)) if !s.trim().is_empty() => s.trim().to_string(),
+            _ => "Okänd".to_string(),
+        };
+
+        let gedcom_part = gedcom_id
+            .as_ref()
+            .filter(|id| !id.is_empty())
+            .map(|id| {
+                let stripped = id.trim_matches('@');
+                if stripped.is_empty() {
+                    String::new()
+                } else {
+                    format!(" [{}]", stripped)
+                }
+            })
+            .unwrap_or_default();
+
+        let year_part = match (birth_year, death_year) {
+            (Some(b), Some(d)) => format!(" ({}-{})", b, d),
+            (Some(b), None) => format!(" ({})", b),
+            (None, Some(d)) => format!(" (-{})", d),
+            (None, None) => String::new(),
+        };
+
+        format!("{}{}{}", full_name, gedcom_part, year_part)
+    }
+
+    /// Generera katalognamn från denna persons data
+    pub fn generate_my_directory_name(&self, format: crate::models::DirNameFormat) -> String {
+        match format {
+            crate::models::DirNameFormat::FullName => {
+                let birth_year = self.birth_date.map(|d| d.year());
+                let death_year = self.death_date.map(|d| d.year());
+                Self::generate_full_name_directory(
+                    &self.firstname,
+                    &self.surname,
+                    &self.gedcom_id,
+                    birth_year,
+                    death_year,
+                )
+            }
+            other => {
+                let birth_date_str = self.birth_date.map(|d| d.format("%Y-%m-%d").to_string());
+                Self::generate_directory_name(&self.firstname, &self.surname, &birth_date_str, other)
+            }
+        }
+    }
+
     /// Generera ett katalognamn baserat på namn, födelsedatum och format.
     /// Returnerar en sökväg med efternamnsprefix, t.ex. `andersson/johan_andersson_1921_12_07`.
     /// Personer utan efternamn grupperas under `_ovrigt`.
@@ -129,11 +191,20 @@ impl Person {
         birth_date: &Option<String>,
         format: crate::models::DirNameFormat,
     ) -> String {
+        if format == crate::models::DirNameFormat::FullName {
+            let birth_year = birth_date
+                .as_ref()
+                .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                .map(|d| d.year());
+            return Self::generate_full_name_directory(firstname, surname, &None, birth_year, None);
+        }
+
         let f = firstname.as_deref().unwrap_or("");
         let s = surname.as_deref().unwrap_or("");
         let d = birth_date.as_deref().unwrap_or("");
 
         let parts: Vec<&str> = match format {
+            crate::models::DirNameFormat::FullName => unreachable!(),
             crate::models::DirNameFormat::FirstnameFirst => {
                 [f, s, d].into_iter().filter(|p| !p.is_empty()).collect()
             }
@@ -269,6 +340,74 @@ mod tests {
                 DirNameFormat::DateFirst,
             ),
             "akerstrom/1921_12_07_johan_akerstrom"
+        );
+
+        // FullName — med födelseår
+        assert_eq!(
+            Person::generate_directory_name(
+                &Some("Carl Magnus".into()),
+                &Some("Carleson".into()),
+                &Some("1878-03-15".into()),
+                DirNameFormat::FullName,
+            ),
+            "Carl Magnus Carleson (1878)"
+        );
+
+        // FullName — utan datum
+        assert_eq!(
+            Person::generate_directory_name(
+                &Some("Carl Magnus".into()),
+                &Some("Carleson".into()),
+                &None,
+                DirNameFormat::FullName,
+            ),
+            "Carl Magnus Carleson"
+        );
+    }
+
+    #[test]
+    fn test_generate_full_name_directory() {
+
+        // Med gedcom_id och båda år
+        assert_eq!(
+            Person::generate_full_name_directory(
+                &Some("Carl Magnus".into()),
+                &Some("Carleson".into()),
+                &Some("@P45@".into()),
+                Some(1878),
+                Some(1964),
+            ),
+            "Carl Magnus Carleson [P45] (1878-1964)"
+        );
+
+        // Utan gedcom_id, bara födelseår
+        assert_eq!(
+            Person::generate_full_name_directory(
+                &Some("Carl Magnus".into()),
+                &Some("Carleson".into()),
+                &None,
+                Some(1878),
+                None,
+            ),
+            "Carl Magnus Carleson (1878)"
+        );
+
+        // Bara dödsår
+        assert_eq!(
+            Person::generate_full_name_directory(
+                &Some("Anna".into()),
+                &None,
+                &None,
+                None,
+                Some(1950),
+            ),
+            "Anna (-1950)"
+        );
+
+        // Okänd person
+        assert_eq!(
+            Person::generate_full_name_directory(&None, &None, &None, None, None),
+            "Okänd"
         );
     }
 

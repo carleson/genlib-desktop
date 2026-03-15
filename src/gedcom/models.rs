@@ -63,6 +63,21 @@ impl GedcomIndividual {
 
     /// Generera ett katalognamn baserat på namn, födelsedatum och format
     pub fn generate_directory_name(&self, format: crate::models::DirNameFormat) -> String {
+        if format == crate::models::DirNameFormat::FullName {
+            use chrono::Datelike;
+            let birth_year = self.birth_date.as_ref().and_then(|d| d.to_naive_date()).map(|d| d.year());
+            let death_year = self.death_date.as_ref().and_then(|d| d.to_naive_date()).map(|d| d.year());
+            // Strip @ from GEDCOM xref: "@P45@" → "P45"
+            let gedcom_id = if self.id.is_empty() { None } else { Some(self.id.clone()) };
+            return crate::models::Person::generate_full_name_directory(
+                &self.firstname,
+                &self.surname,
+                &gedcom_id,
+                birth_year,
+                death_year,
+            );
+        }
+
         let birth_str = self
             .birth_date
             .as_ref()

@@ -6,8 +6,10 @@ use std::path::PathBuf;
 /// Format för personkatalogsnamn
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum DirNameFormat {
-    /// förnamn_efternamn_födelsedatum
+    /// "Förnamn Efternamn [GedcomId] (FöddÅr-DödÅr)"
     #[default]
+    FullName,
+    /// förnamn_efternamn_födelsedatum
     FirstnameFirst,
     /// efternamn_förnamn_födelsedatum
     SurnameFirst,
@@ -18,6 +20,7 @@ pub enum DirNameFormat {
 impl DirNameFormat {
     pub fn label(&self) -> &'static str {
         match self {
+            Self::FullName => "Fullständigt namn",
             Self::FirstnameFirst => "Förnamn först",
             Self::SurnameFirst => "Efternamn först",
             Self::DateFirst => "Datum först",
@@ -26,6 +29,7 @@ impl DirNameFormat {
 
     pub fn example(&self) -> &'static str {
         match self {
+            Self::FullName => "Carl Magnus Carleson [P45] (1878-1964)",
             Self::FirstnameFirst => "svensson/gosta_anders_svensson_1921_12_07",
             Self::SurnameFirst => "svensson/svensson_gosta_anders_1921_12_07",
             Self::DateFirst => "svensson/1921_12_07_gosta_anders_svensson",
@@ -33,14 +37,15 @@ impl DirNameFormat {
     }
 
     pub fn all() -> &'static [DirNameFormat] {
-        &[Self::FirstnameFirst, Self::SurnameFirst, Self::DateFirst]
+        &[Self::FullName, Self::FirstnameFirst, Self::SurnameFirst, Self::DateFirst]
     }
 
     pub fn from_db_str(s: &str) -> Self {
         match s {
+            "full_name" => Self::FullName,
             "surname_first" => Self::SurnameFirst,
             "date_first" => Self::DateFirst,
-            _ => Self::FirstnameFirst,
+            _ => Self::FullName,
         }
     }
 }
@@ -48,6 +53,7 @@ impl DirNameFormat {
 impl fmt::Display for DirNameFormat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::FullName => write!(f, "full_name"),
             Self::FirstnameFirst => write!(f, "firstname_first"),
             Self::SurnameFirst => write!(f, "surname_first"),
             Self::DateFirst => write!(f, "date_first"),

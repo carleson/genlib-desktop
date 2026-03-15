@@ -27,6 +27,10 @@ pub struct SettingsView {
     resource_types_cache: Vec<ResourceType>,
     resource_types_loaded: bool,
     new_resource_type_name: String,
+    // Katalognamnformat
+    selected_format: crate::models::DirNameFormat,
+    format_loaded: bool,
+    rename_status: Option<String>,
 }
 
 impl SettingsView {
@@ -43,6 +47,9 @@ impl SettingsView {
             resource_types_cache: Vec::new(),
             resource_types_loaded: false,
             new_resource_type_name: String::new(),
+            selected_format: crate::models::DirNameFormat::default(),
+            format_loaded: false,
+            rename_status: None,
         }
     }
 
@@ -178,7 +185,7 @@ impl SettingsView {
 
                     ui.add_space(16.0);
 
-                    // Katalognamnformat (read-only)
+                    // Katalognamnformat (interaktivt)
                     egui::Frame::none()
                         .fill(ui.visuals().extreme_bg_color)
                         .rounding(8.0)
@@ -188,20 +195,64 @@ impl SettingsView {
                             ui.label(RichText::new("Katalognamnformat").strong());
                             ui.add_space(8.0);
 
-                            if let Ok(config) = db.config().get() {
-                                ui.label(format!("Format: {}", config.dir_name_format.label()));
+                            // Format-väljare
+                            let mut format_changed = false;
+                            for &fmt in crate::models::DirNameFormat::all() {
+                                if ui.radio(self.selected_format == fmt, fmt.label()).clicked() {
+                                    self.selected_format = fmt;
+                                    format_changed = true;
+                                }
                                 ui.label(
-                                    RichText::new(format!("Exempel: {}", config.dir_name_format.example()))
+                                    RichText::new(fmt.example())
                                         .small()
                                         .color(Colors::TEXT_MUTED),
                                 );
+                                ui.add_space(2.0);
                             }
+
+                            ui.add_space(8.0);
+
+                            // Spara format-ändring
+                            if ui.button("Spara format").clicked() || format_changed {
+                                self.save_format(db, state);
+                            }
+
+                            ui.separator();
                             ui.add_space(4.0);
+
+                            ui.label(RichText::new("Döp om befintliga kataloger").strong().small());
                             ui.label(
-                                RichText::new("Ändras vid setup av nytt projekt.")
+                                RichText::new("Byter namn på alla personkataloger i filsystemet och databasen till det valda formatet.")
                                     .small()
                                     .color(Colors::TEXT_MUTED),
                             );
+                            ui.add_space(4.0);
+
+                            if ui.button("Döp om kataloger").clicked() {
+                                self.rename_status = None;
+                                match Self::rename_person_directories(db) {
+                                    Ok((count, errors)) => {
+                                        if errors.is_empty() {
+                                            self.rename_status = Some(format!("{} katalog(er) omdöpta.", count));
+                                        } else {
+                                            self.rename_status = Some(format!(
+                                                "{} omdöpta. {} fel: {}",
+                                                count,
+                                                errors.len(),
+                                                errors.join(", ")
+                                            ));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        self.rename_status = Some(format!("Fel: {}", e));
+                                    }
+                                }
+                            }
+
+                            if let Some(ref msg) = self.rename_status {
+                                ui.add_space(4.0);
+                                ui.label(RichText::new(msg).small().color(Colors::SUCCESS));
+                            }
                         });
 
                     ui.add_space(16.0);
@@ -559,6 +610,10 @@ impl SettingsView {
         if let Ok(config) = db.config().get() {
             self.media_path = config.media_directory_path.display().to_string();
             self.backup_path = config.backup_directory_path.display().to_string();
+            if !self.format_loaded {
+                self.selected_format = config.dir_name_format;
+                self.format_loaded = true;
+            }
         }
     }
 
@@ -566,13 +621,11 @@ impl SettingsView {
         use crate::models::SystemConfig;
         use std::path::PathBuf;
 
-        let existing_format = db.config().get().map(|c| c.dir_name_format).unwrap_or_default();
-
         let config = SystemConfig {
             id: 1,
             media_directory_path: PathBuf::from(&self.media_path),
             backup_directory_path: PathBuf::from(&self.backup_path),
-            dir_name_format: existing_format,
+            dir_name_format: self.selected_format,
             created_at: None,
             updated_at: None,
         };
@@ -587,6 +640,93 @@ impl SettingsView {
                 self.status_message = Some(format!("Fel: {}", e));
             }
         }
+    }
+
+    fn save_format(&mut self, db: &Database, state: &mut AppState) {
+        use crate::models::SystemConfig;
+        use std::path::PathBuf;
+
+        let config = SystemConfig {
+            id: 1,
+            media_directory_path: PathBuf::from(&self.media_path),
+            backup_directory_path: PathBuf::from(&self.backup_path),
+            dir_name_format: self.selected_format,
+            created_at: None,
+            updated_at: None,
+        };
+
+        match db.config().save(&config) {
+            Ok(_) => {
+                state.show_success(&format!("Format sparat: {}", self.selected_format.label()));
+            }
+            Err(e) => {
+                state.show_error(&format!("Kunde inte spara format: {}", e));
+            }
+        }
+    }
+
+    fn rename_person_directories(db: &Database) -> anyhow::Result<(usize, Vec<String>)> {
+        let config = db.config().get()?;
+        let format = config.dir_name_format;
+        let persons_root = config.persons_directory();
+
+        let persons = db.persons().find_all()?;
+        let mut renamed = 0usize;
+        let mut errors: Vec<String> = Vec::new();
+
+        for mut person in persons {
+            let old_dir = person.directory_name.clone();
+            let new_dir = person.generate_my_directory_name(format);
+
+            if old_dir == new_dir {
+                continue;
+            }
+
+            // Check that new_dir is not already taken in DB
+            if db.persons().find_by_directory(&new_dir)?.is_some() {
+                errors.push(format!("Katalog redan tagen: {}", new_dir));
+                continue;
+            }
+
+            let old_path = persons_root.join(&old_dir);
+            let new_path = persons_root.join(&new_dir);
+
+            // Rename on filesystem if the source exists
+            if old_path.exists() {
+                if new_path.exists() {
+                    errors.push(format!("Målkatalogen finns redan: {}", new_dir));
+                    continue;
+                }
+                // Create parent directories for target
+                if let Some(parent) = new_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::rename(&old_path, &new_path)?;
+
+                // Clean up empty parent directories of old path
+                if let Some(old_parent) = old_path.parent() {
+                    if old_parent != persons_root {
+                        let _ = std::fs::remove_dir(old_parent);
+                    }
+                }
+            }
+
+            // Update profile_image_path if it references old directory
+            if let Some(ref old_profile) = person.profile_image_path.clone() {
+                let old_prefix = format!("persons/{}/", old_dir);
+                if old_profile.starts_with(&old_prefix) {
+                    let rest = &old_profile[old_prefix.len()..];
+                    person.profile_image_path = Some(format!("persons/{}/{}", new_dir, rest));
+                }
+            }
+
+            // Update directory_name in DB
+            person.directory_name = new_dir;
+            db.persons().update(&mut person)?;
+            renamed += 1;
+        }
+
+        Ok((renamed, errors))
     }
 }
 
