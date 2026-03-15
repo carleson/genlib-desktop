@@ -160,12 +160,17 @@ impl Person {
 
         let dir_name = format!("{}{}{}", full_name, gedcom_part, year_part);
 
-        // Gruppera under sanerat efternamnsprefix, precis som de andra formaten
+        // Gruppera under efternamnsprefix med bevarad skiftläge, t.ex. "Carleson/"
         let s = surname.as_deref().unwrap_or("").trim();
         let prefix = if s.is_empty() {
             "_ovrigt".to_string()
         } else {
-            Self::sanitize_directory_name(s)
+            // Behåll originalskiftläge men ta bort tecken som är ogiltiga i filsystemet
+            s.chars()
+                .map(|c| if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c })
+                .collect::<String>()
+                .trim_matches('_')
+                .to_string()
         };
 
         format!("{}/{}", prefix, dir_name)
@@ -352,7 +357,7 @@ mod tests {
             "akerstrom/1921_12_07_johan_akerstrom"
         );
 
-        // FullName — med födelseår, grupperat under sanerat efternamn
+        // FullName — med födelseår, grupperat under Carleson/ (stor begynnelsebokstav)
         assert_eq!(
             Person::generate_directory_name(
                 &Some("Carl Magnus".into()),
@@ -360,7 +365,7 @@ mod tests {
                 &Some("1878-03-15".into()),
                 DirNameFormat::FullName,
             ),
-            "carleson/Carl Magnus Carleson (1878)"
+            "Carleson/Carl Magnus Carleson (1878)"
         );
 
         // FullName — utan datum
@@ -371,14 +376,14 @@ mod tests {
                 &None,
                 DirNameFormat::FullName,
             ),
-            "carleson/Carl Magnus Carleson"
+            "Carleson/Carl Magnus Carleson"
         );
     }
 
     #[test]
     fn test_generate_full_name_directory() {
 
-        // Med gedcom_id och båda år — grupperat under carleson/
+        // Med gedcom_id och båda år — grupperat under Carleson/ (stor begynnelsebokstav)
         assert_eq!(
             Person::generate_full_name_directory(
                 &Some("Carl Magnus".into()),
@@ -387,7 +392,7 @@ mod tests {
                 Some(1878),
                 Some(1964),
             ),
-            "carleson/Carl Magnus Carleson [P45] (1878-1964)"
+            "Carleson/Carl Magnus Carleson [P45] (1878-1964)"
         );
 
         // Utan gedcom_id, bara födelseår
@@ -399,7 +404,7 @@ mod tests {
                 Some(1878),
                 None,
             ),
-            "carleson/Carl Magnus Carleson (1878)"
+            "Carleson/Carl Magnus Carleson (1878)"
         );
 
         // Bara dödsår, inget efternamn → _ovrigt/
