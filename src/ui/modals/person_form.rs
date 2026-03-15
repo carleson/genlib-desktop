@@ -232,6 +232,7 @@ impl PersonFormModal {
                 birth_date,
                 death_date,
                 occupation,
+                gedcom_id: None,
                 age: None,
                 directory_name: self.form_data.directory_name.clone(),
                 profile_image_path: None,

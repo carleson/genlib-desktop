@@ -384,6 +384,12 @@ impl PersonDetailView {
                                     ui.end_row();
                                 }
 
+                                if let Some(ref gedcom_id) = person.gedcom_id {
+                                    ui.label(RichText::new("GEDCOM-ID:").color(Colors::TEXT_SECONDARY));
+                                    ui.label(gedcom_id);
+                                    ui.end_row();
+                                }
+
                                 ui.label(RichText::new("Katalog:").color(Colors::TEXT_SECONDARY));
                                 ui.horizontal(|ui| {
                                     ui.label(&person.directory_name);

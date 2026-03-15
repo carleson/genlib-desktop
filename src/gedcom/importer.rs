@@ -214,9 +214,17 @@ impl<'a> GedcomImporter<'a> {
         {
             let person_id = existing.id.unwrap();
 
-            // Uppdatera occupation om GEDCOM har ett värde
+            // Uppdatera om GEDCOM har nya värden
+            let mut changed = false;
             if new_occupation.is_some() && existing.occupation != new_occupation {
                 existing.occupation = new_occupation;
+                changed = true;
+            }
+            if existing.gedcom_id.is_none() {
+                existing.gedcom_id = Some(indi.id.clone());
+                changed = true;
+            }
+            if changed {
                 self.db.persons().update(&mut existing)?;
                 return Ok((person_id, ImportStatus::Updated));
             }
@@ -235,6 +243,7 @@ impl<'a> GedcomImporter<'a> {
             birth_date: indi.birth_date.as_ref().and_then(|d| d.to_naive_date()),
             death_date: indi.death_date.as_ref().and_then(|d| d.to_naive_date()),
             occupation: new_occupation,
+            gedcom_id: Some(indi.id.clone()),
             directory_name: unique_dir_name,
             profile_image_path: None,
             created_at: None,

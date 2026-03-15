@@ -259,4 +259,15 @@ pub struct MyWidget {
     - Tabellayout med kolumnrubriker
   - Tester: 43/43 passerar (3 nya EXIF-tester)
 
+### 2026-03-15
+- **Claude:** Implementerade ärende #23 (GEDCOM-ID för personer):
+  - Schema v9: Ny kolumn `gedcom_id TEXT` i `persons`-tabellen
+  - Migration v8→v9: `ALTER TABLE persons ADD COLUMN gedcom_id TEXT`
+  - `Person`-modellen: Nytt fält `gedcom_id: Option<String>`
+  - `PersonRepository`: Uppdaterade alla SQL-frågor, nytt `SearchField::GedcomId`
+  - GEDCOM-importören: Sparar `indi.id` som `gedcom_id` vid skapande; uppdaterar befintliga om `gedcom_id` saknas
+  - Person-detaljvy: Visar GEDCOM-ID i info-grid
+  - Personlista: GEDCOM-ID som sökalternativ i dropdown
+  - Tester: 64/64 passerar
+
 <!-- Lägg till nya meddelanden här -->

@@ -121,6 +121,7 @@ fn migrate_from(conn: &Connection, from_version: i32) -> Result<()> {
             6 => migrate_v5_to_v6(conn)?,
             7 => migrate_v6_to_v7(conn)?,
             8 => migrate_v7_to_v8(conn)?,
+            9 => migrate_v8_to_v9(conn)?,
             _ => {}
         }
 
@@ -279,6 +280,17 @@ fn migrate_v6_to_v7(conn: &Connection) -> Result<()> {
         "INSERT OR IGNORE INTO resource_types (name, directory_name) VALUES ('Fastigheter', 'fastigheter');
          INSERT OR IGNORE INTO resource_types (name, directory_name) VALUES ('Företag', 'företag');
          INSERT OR IGNORE INTO resource_types (name, directory_name) VALUES ('Platser', 'platser');"
+    )?;
+
+    Ok(())
+}
+
+/// Migration v8 -> v9: Lägg till gedcom_id i persons
+fn migrate_v8_to_v9(conn: &Connection) -> Result<()> {
+    info!("Migration v9: Lägger till gedcom_id i persons");
+
+    conn.execute_batch(
+        "ALTER TABLE persons ADD COLUMN gedcom_id TEXT;"
     )?;
 
     Ok(())

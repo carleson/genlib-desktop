@@ -19,6 +19,8 @@ pub enum SearchField {
     Directory,
     /// Födelseplats
     BirthPlace,
+    /// GEDCOM-ID
+    GedcomId,
 }
 
 /// Avancerade sökfilter för personlistan
@@ -97,7 +99,7 @@ impl PersonRepository {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, firstname, surname, birth_place, birth_date, death_date, age,
-                    occupation, directory_name, profile_image_path, created_at, updated_at
+                    occupation, gedcom_id, directory_name, profile_image_path, created_at, updated_at
              FROM persons
              ORDER BY surname, firstname"
         )?;
@@ -115,7 +117,7 @@ impl PersonRepository {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, firstname, surname, birth_place, birth_date, death_date, age,
-                    occupation, directory_name, profile_image_path, created_at, updated_at
+                    occupation, gedcom_id, directory_name, profile_image_path, created_at, updated_at
              FROM persons
              WHERE id = ?"
         )?;
@@ -132,7 +134,7 @@ impl PersonRepository {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, firstname, surname, birth_place, birth_date, death_date, age,
-                    occupation, directory_name, profile_image_path, created_at, updated_at
+                    occupation, gedcom_id, directory_name, profile_image_path, created_at, updated_at
              FROM persons
              WHERE directory_name = ?"
         )?;
@@ -160,7 +162,7 @@ impl PersonRepository {
 
         let mut sql = String::from(
             "SELECT DISTINCT p.id, p.firstname, p.surname, p.birth_place, p.birth_date, p.death_date, p.age,
-                    p.occupation, p.directory_name, p.profile_image_path, p.created_at, p.updated_at
+                    p.occupation, p.gedcom_id, p.directory_name, p.profile_image_path, p.created_at, p.updated_at
              FROM persons p"
         );
 
@@ -206,6 +208,11 @@ impl PersonRepository {
                 }
                 SearchField::BirthPlace => {
                     sql.push_str(&format!(" AND p.birth_place LIKE ?{}", param_index));
+                    params_vec.push(format!("%{}%", filter.query));
+                    param_index += 1;
+                }
+                SearchField::GedcomId => {
+                    sql.push_str(&format!(" AND p.gedcom_id LIKE ?{}", param_index));
                     params_vec.push(format!("%{}%", filter.query));
                     param_index += 1;
                 }
@@ -307,8 +314,8 @@ impl PersonRepository {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO persons (firstname, surname, birth_place, birth_date, death_date, age,
-                                  occupation, directory_name, profile_image_path)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                                  occupation, gedcom_id, directory_name, profile_image_path)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 person.firstname,
                 person.surname,
@@ -317,6 +324,7 @@ impl PersonRepository {
                 person.death_date.map(|d| d.to_string()),
                 person.age,
                 person.occupation,
+                person.gedcom_id,
                 person.directory_name,
                 person.profile_image_path,
             ],
@@ -338,9 +346,9 @@ impl PersonRepository {
         let rows = conn.execute(
             "UPDATE persons SET
                 firstname = ?1, surname = ?2, birth_place = ?3, birth_date = ?4, death_date = ?5,
-                age = ?6, occupation = ?7, directory_name = ?8, profile_image_path = ?9,
+                age = ?6, occupation = ?7, gedcom_id = ?8, directory_name = ?9, profile_image_path = ?10,
                 updated_at = datetime('now')
-             WHERE id = ?10",
+             WHERE id = ?11",
             params![
                 person.firstname,
                 person.surname,
@@ -349,6 +357,7 @@ impl PersonRepository {
                 person.death_date.map(|d| d.to_string()),
                 person.age,
                 person.occupation,
+                person.gedcom_id,
                 person.directory_name,
                 person.profile_image_path,
                 id,
@@ -426,7 +435,7 @@ impl PersonRepository {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT p.id, p.firstname, p.surname, p.birth_place, p.birth_date, p.death_date, p.age,
-                    p.occupation, p.directory_name, p.profile_image_path, p.created_at, p.updated_at
+                    p.occupation, p.gedcom_id, p.directory_name, p.profile_image_path, p.created_at, p.updated_at
              FROM persons p
              INNER JOIN bookmarked_persons bp ON p.id = bp.person_id
              ORDER BY p.surname, p.firstname"
@@ -504,10 +513,11 @@ impl PersonRepository {
                 .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()),
             age: row.get(6).ok(),
             occupation: row.get(7).ok().flatten(),
-            directory_name: row.get(8).unwrap_or_default(),
-            profile_image_path: row.get(9).ok(),
-            created_at: row.get(10).ok(),
-            updated_at: row.get(11).ok(),
+            gedcom_id: row.get::<_, Option<String>>(8).ok().flatten(),
+            directory_name: row.get(9).unwrap_or_default(),
+            profile_image_path: row.get(10).ok(),
+            created_at: row.get(11).ok(),
+            updated_at: row.get(12).ok(),
         }
     }
 }

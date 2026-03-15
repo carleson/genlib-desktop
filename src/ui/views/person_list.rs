@@ -115,6 +115,7 @@ impl PersonListView {
                         SearchField::Surname => "Efternamn",
                         SearchField::Directory => "Katalog",
                         SearchField::BirthPlace => "Födelseplats",
+                        SearchField::GedcomId => "GEDCOM-ID",
                     })
                     .width(90.0)
                     .show_ui(ui, |ui| {
@@ -131,6 +132,9 @@ impl PersonListView {
                             self.needs_refresh = true;
                         }
                         if ui.selectable_value(&mut self.filter.search_field, SearchField::BirthPlace, "Födelseplats").changed() {
+                            self.needs_refresh = true;
+                        }
+                        if ui.selectable_value(&mut self.filter.search_field, SearchField::GedcomId, "GEDCOM-ID").changed() {
                             self.needs_refresh = true;
                         }
                     });
